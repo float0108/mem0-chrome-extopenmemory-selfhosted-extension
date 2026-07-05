@@ -73,6 +73,18 @@ Extension POSTs with `infer: true`. Mem0 server must have a working LLM in **`/c
 
 If saves return 502/503, check `docker compose logs mem0` and dashboard LLM/embedder config.
 
+## Verify search vs sidebar (ChatGPT)
+
+**Sidebar “Recent Memories”** = list API (newest stored facts). **ChatGPT** only sees what **semantic `/search`** returns for your typed query, plus anything you **add to the composer** (green `mem0-wrapper` block).
+
+Auto-inject into the prompt is **disabled** in this fork (`setupAutoInjectPrefetch` is a no-op). Typing only **prefetches** search for the **^M memory modal** — it does **not** silently prepend context to ChatGPT.
+
+### Trace in DevTools
+
+Log `[OpenMemory]` in DevTools. Off by default — turn on only while debugging. Reload ChatGPT tab after saving.
+
+Hermes `MEMORY.md` is **not** in mem0 unless you stored it there — ChatGPT won’t see Hermes file memory via this extension.
+
 ## Security note
 
 `CORS_ALLOW_ALL=true` is fine on localhost; do not expose 8888 to the public internet with that flag.

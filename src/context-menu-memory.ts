@@ -10,74 +10,90 @@ import type { Settings } from './types/settings';
 import { StorageKey } from './types/storage';
 import { buildAuthHeaders } from './utils/util_functions';
 
-export function initContextMenuMemory(): void {
+let saveSelectionClickListenerAttached = false;
+
+function swallowContextMenuLastError(): void {
   try {
-    chrome.contextMenus.create(
-      {
-        id: 'mem0.saveSelection',
-        title: 'Save to OpenMemory',
-        contexts: ['selection'],
-      },
-      () => {
-        /* no-op */
+    void chrome.runtime.lastError;
+  } catch {
+    /* ignore */
+  }
+}
+
+export function initContextMenuMemory(): void {
+  if (!saveSelectionClickListenerAttached) {
+    saveSelectionClickListenerAttached = true;
+    chrome.contextMenus.onClicked.addListener(
+      async (info: chrome.contextMenus.OnClickData, tab?: chrome.tabs.Tab) => {
+        if (
+          !tab ||
+          tab.id === null ||
+          tab.id === undefined ||
+          info.menuItemId !== 'mem0.saveSelection'
+        ) {
+          return;
+        }
+
+        const tabId = tab.id;
+
+        const selection = String(info.selectionText || '').trim();
+        if (!selection) {
+          toast(tabId, 'Select text first', ToastVariant.ERROR);
+          return;
+        }
+
+        const settings = await getSettings();
+        if (!settings.hasCreds) {
+          toast(tabId, 'Sign in required', ToastVariant.ERROR);
+          return;
+        }
+        if (settings.memoryEnabled === false) {
+          toast(tabId, 'Memory is disabled in settings', ToastVariant.ERROR);
+          return;
+        }
+
+        const title = tab.title || '';
+        const url = info.pageUrl || tab.url || '';
+
+        let ctx = await requestSelectionContext(tabId);
+        if (ctx && ctx.error) {
+          await tryInjectSelectionScript(tabId);
+          ctx = await requestSelectionContext(tabId);
+        }
+        const content = composeBasic({ selection, title, url });
+
+        try {
+          const ok = await addMemory(content, settings);
+          toast(
+            tabId,
+            ok ? 'Saved to OpenMemory' : 'Failed to save',
+            ok ? ToastVariant.SUCCESS : ToastVariant.ERROR
+          );
+        } catch (err) {
+          console.error('Failed to add memory:', err);
+          toast(tabId, 'Failed to save', ToastVariant.ERROR);
+        }
       }
     );
+  }
+
+  try {
+    chrome.contextMenus.remove('mem0.saveSelection', () => {
+      swallowContextMenuLastError();
+      chrome.contextMenus.create(
+        {
+          id: 'mem0.saveSelection',
+          title: 'Save to OpenMemory',
+          contexts: ['selection'],
+        },
+        () => {
+          swallowContextMenuLastError();
+        }
+      );
+    });
   } catch {
     // ignore
   }
-
-  chrome.contextMenus.onClicked.addListener(
-    async (info: chrome.contextMenus.OnClickData, tab?: chrome.tabs.Tab) => {
-      if (
-        !tab ||
-        tab.id === null ||
-        tab.id === undefined ||
-        info.menuItemId !== 'mem0.saveSelection'
-      ) {
-        return;
-      }
-
-      const tabId = tab.id; // Type narrowing - we know tab.id is not null or undefined here
-
-      const selection = String(info.selectionText || '').trim();
-      if (!selection) {
-        toast(tabId, 'Select text first', ToastVariant.ERROR);
-        return;
-      }
-
-      const settings = await getSettings();
-      if (!settings.hasCreds) {
-        toast(tabId, 'Sign in required', ToastVariant.ERROR);
-        return;
-      }
-      if (settings.memoryEnabled === false) {
-        toast(tabId, 'Memory is disabled in settings', ToastVariant.ERROR);
-        return;
-      }
-
-      const title = tab.title || '';
-      const url = info.pageUrl || tab.url || '';
-
-      let ctx = await requestSelectionContext(tabId);
-      if (ctx && ctx.error) {
-        await tryInjectSelectionScript(tabId);
-        ctx = await requestSelectionContext(tabId);
-      }
-      const content = composeBasic({ selection, title, url });
-
-      try {
-        const ok = await addMemory(content, settings);
-        toast(
-          tabId,
-          ok ? 'Saved to OpenMemory' : 'Failed to save',
-          ok ? ToastVariant.SUCCESS : ToastVariant.ERROR
-        );
-      } catch (err) {
-        console.error('Failed to add memory:', err);
-        toast(tabId, 'Failed to save', ToastVariant.ERROR);
-      }
-    }
-  );
 }
 
 function toast(tabId: number, message: string, variant: ToastVariant = ToastVariant.SUCCESS): void {

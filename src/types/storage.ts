@@ -13,6 +13,7 @@ export enum StorageKey {
   TOP_K = 'top_k',
   TRACK_SEARCHES = 'track_searches',
   API_BASE_URL = 'baseUrl',
+  OPENMEMORY_DEBUG = 'openmemory_debug',
 }
 
 /** Type mapping for storage values (required fields) */

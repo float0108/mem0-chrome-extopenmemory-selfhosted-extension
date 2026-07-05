@@ -45,5 +45,6 @@ chrome.runtime.onMessage.addListener(
   }
 );
 
+// Context menu registered on install; also ensure once per worker wake (idempotent remove+create)
 initContextMenuMemory();
 initDirectUrlTracking();

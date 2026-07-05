@@ -5,10 +5,13 @@ import type { MemoryItem, MemorySearchItem, OptionalApiParams } from '../types/m
 import { SidebarAction } from '../types/messages';
 import { type StorageData, StorageKey } from '../types/storage';
 import { createOrchestrator, type SearchStorage } from '../utils/background_search';
+import { initOpenMemoryDebugCache, openMemoryLog } from '../utils/openmemory_debug';
 import { OPENMEMORY_PROMPTS } from '../utils/llm_prompts';
 import { SITE_CONFIG } from '../utils/site_config';
 import { sendExtensionEvent } from '../utils/util_functions';
 import { OPENMEMORY_UI } from '../utils/util_positioning';
+
+initOpenMemoryDebugCache();
 
 export {};
 
@@ -89,6 +92,14 @@ const chatgptSearch = createOrchestrator({
       ...optionalParams,
     };
 
+    openMemoryLog('search:request', {
+      baseUrl,
+      userId,
+      threshold,
+      topK,
+      queryPreview: query.slice(0, 120),
+    });
+
     const res = await fetch(`${baseUrl}/search`, {
       method: 'POST',
       headers,
@@ -97,14 +108,31 @@ const chatgptSearch = createOrchestrator({
     });
 
     if (!res.ok) {
+      openMemoryLog('search:http_error', { status: res.status, queryPreview: query.slice(0, 80) });
       throw new Error(`API request failed with status ${res.status}`);
     }
     const responseData = await res.json();
-    return responseData.results || responseData;
+    const results = responseData.results || responseData;
+    openMemoryLog('search:response', {
+      count: Array.isArray(results) ? results.length : 0,
+      top: Array.isArray(results)
+        ? results.slice(0, 5).map((r: MemorySearchItem) => ({
+            id: r.id,
+            score: (r as { score?: number }).score,
+            memoryPreview: String(r.memory || '').slice(0, 80),
+          }))
+        : [],
+    });
+    return results;
   },
 
   // Don't render on prefetch. When modal is open, update it.
   onSuccess: function (normQuery: string, responseData: MemorySearchItem[]) {
+    openMemoryLog('search:onSuccess', {
+      normQuery: normQuery.slice(0, 80),
+      modalOpen: memoryModalShown,
+      count: (responseData || []).length,
+    });
     if (!memoryModalShown) {
       return;
     }
@@ -118,14 +146,15 @@ const chatgptSearch = createOrchestrator({
     createMemoryModal(memoryItems, false, currentModalSourceButtonId);
   },
 
-  onError: function () {
+  onError: function (normQuery: string, err: Error) {
+    openMemoryLog('search:error', { normQuery: normQuery.slice(0, 80), message: err.message });
     if (memoryModalShown) {
       createMemoryModal([], false, currentModalSourceButtonId);
     }
   },
 
   minLength: 3,
-  debounceMs: 75,
+  debounceMs: 350,
   cacheTTL: 60000,
 });
 
@@ -1124,6 +1153,11 @@ function updateInputWithMemories(): void {
     });
     memoriesContent += '</div>';
 
+    void openMemoryLog('inject:composer', {
+      memoryCount: allMemories.length,
+      previews: allMemories.slice(0, 5).map(m => String(m).slice(0, 80)),
+    });
+
     // Add the final content to the input
     if (inputElement.tagName.toLowerCase() === 'div') {
       inputElement.innerHTML = `${baseContent}<div><br></div>${memoriesContent}`;
@@ -1352,21 +1386,21 @@ async function updateNotificationDot(): Promise<void> {
     document.querySelector('#prompt-textarea') ||
     document.querySelector('div[contenteditable="true"]') ||
     document.querySelector('textarea');
-  const host = document.getElementById('mem0-icon-button'); // shadow host
+  const host = document.getElementById('mem0-icon-button');
   if (!input || !host) {
-    setTimeout(updateNotificationDot, 1000);
     return;
   }
+  if (input.dataset.mem0DotHooked === 'true') {
+    return;
+  }
+  input.dataset.mem0DotHooked = 'true';
 
   const set = () => {
-    const txt = input.textContent || input.value || '';
+    const txt = input.textContent || (input as HTMLTextAreaElement).value || '';
     host.setAttribute('data-has-text', txt.trim() ? '1' : '0');
   };
 
-  const mo = new MutationObserver(set);
-  mo.observe(input, { childList: true, characterData: true, subtree: true });
   input.addEventListener('input', set);
-  input.addEventListener('keyup', set);
   input.addEventListener('focus', set);
   set();
 }
@@ -1897,6 +1931,8 @@ function getInputValue(): string {
 }
 
 let chatgptBackgroundSearchHandler: ((this: Element, ev: Event) => void) | null = null;
+/** Off by default — typing prefetch hits mem0 /search on every pause and adds main-thread work on ChatGPT. */
+let mem0TypingPrefetchEnabled = false;
 
 function hookBackgroundSearchTyping() {
   const inputElement =
@@ -1915,8 +1951,10 @@ function hookBackgroundSearchTyping() {
 
   if (!chatgptBackgroundSearchHandler) {
     chatgptBackgroundSearchHandler = function () {
+      if (!mem0TypingPrefetchEnabled) {
+        return;
+      }
       const text = getInputValue() || '';
-      console.log('Background search for:', text);
       chatgptSearch.setText(text);
     };
   }
@@ -1924,10 +1962,20 @@ function hookBackgroundSearchTyping() {
     'input',
     chatgptBackgroundSearchHandler as (this: Element, ev: Event) => void
   );
-  inputElement.addEventListener(
-    'keyup',
-    chatgptBackgroundSearchHandler as (this: Element, ev: Event) => void
-  );
+}
+
+let mem0UiRefreshTimer: ReturnType<typeof setTimeout> | null = null;
+function scheduleMem0UiRefresh(): void {
+  if (mem0UiRefreshTimer) {
+    return;
+  }
+  mem0UiRefreshTimer = setTimeout(() => {
+    mem0UiRefreshTimer = null;
+    addSyncButton();
+    addSendButtonListener();
+    hookBackgroundSearchTyping();
+    setupAutoInjectPrefetch();
+  }, 2000);
 }
 
 function addSyncButton(): void {
@@ -2294,30 +2342,15 @@ function initializeMem0Integration(): void {
 
   // Remove global Enter interception previously added for auto-inject
 
-  observer = new MutationObserver(() => {
-    addSyncButton();
-    // (async () => await addMem0IconButton())();
-    addSendButtonListener();
-    // (async () => await updateNotificationDot())();
-    hookBackgroundSearchTyping();
-    setupAutoInjectPrefetch();
+  // Re-hook UI when composer appears — NOT on every body mutation (ChatGPT streams constantly).
+  const composerWatch = new MutationObserver(() => {
+    scheduleMem0UiRefresh();
   });
-
-  observer.observe(document.body, { childList: true, subtree: true });
-
-  // Add a MutationObserver to watch for changes in the DOM but don't intercept Enter key
-  const observerForUI = new MutationObserver(() => {
-    // (async () => await addMem0IconButton())();
-    addSendButtonListener();
-    // (async () => await updateNotificationDot())();
-    hookBackgroundSearchTyping();
-    setupAutoInjectPrefetch();
-  });
-
-  observerForUI.observe(document.body, {
-    childList: true,
-    subtree: true,
-  });
+  const composerRoot =
+    document.querySelector('form[data-type="unified-composer"]') ||
+    document.querySelector('main') ||
+    document.body;
+  composerWatch.observe(composerRoot, { childList: true, subtree: false });
 }
 
 // (global auto-inject interceptors removed)
@@ -2521,11 +2554,11 @@ function chatgptDetectNavigation() {
   }
 }
 
-// Poll for SPA navigations and context validity
+// Poll for SPA navigations (low frequency — was 1s)
 setInterval(() => {
   chatgptCheckExtensionContext();
   chatgptDetectNavigation();
-}, 1000);
+}, 5000);
 
 // Hook browser history navigation
 window.addEventListener('popstate', () => setTimeout(chatgptDetectNavigation, 100));

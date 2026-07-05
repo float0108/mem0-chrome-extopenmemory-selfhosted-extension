@@ -57,18 +57,15 @@ import { hasExtensionContext, storageSyncGet, storageSyncRemove } from './utils/
 
       // Add or remove click listener based on sidebar visibility
       if (sidebarVisible) {
-        document.addEventListener('click', handleOutsideClick);
         document.addEventListener('keydown', handleEscapeKey);
         fetchMemoriesAndCount();
       } else {
-        document.removeEventListener('click', handleOutsideClick);
         document.removeEventListener('keydown', handleEscapeKey);
       }
     } else {
       // If sidebar doesn't exist, create it
       createSidebar();
       sidebarVisible = true;
-      document.addEventListener('click', handleOutsideClick);
       document.addEventListener('keydown', handleEscapeKey);
     }
   }
@@ -82,17 +79,6 @@ import { hasExtensionContext, storageSyncGet, storageSyncRemove } from './utils/
       } else {
         toggleSidebar();
       }
-    }
-  }
-
-  function handleOutsideClick(event: MouseEvent): void {
-    const sidebar = document.getElementById('mem0-sidebar');
-    if (
-      sidebar &&
-      !sidebar.contains(event.target as Node) &&
-      !(event.target as HTMLElement)?.closest?.('.mem0-toggle-btn')
-    ) {
-      toggleSidebar();
     }
   }
 
@@ -321,6 +307,20 @@ import { hasExtensionContext, storageSyncGet, storageSyncRemove } from './utils/
     `;
     settingsTabContent.appendChild(topKSection);
 
+    const debugSection = document.createElement('div');
+    debugSection.className = 'section';
+    debugSection.innerHTML = `
+      <div class="section-header">
+        <h2 class="section-title">Console trace</h2>
+        <label class="switch">
+          <input type="checkbox" id="openMemoryDebugToggle">
+          <span class="slider"></span>
+        </label>
+      </div>
+      <p class="section-description">Debug logs. Reload tab.</p>
+    `;
+    settingsTabContent.appendChild(debugSection);
+
     // Add save button section
     const saveSection = document.createElement('div');
     saveSection.className = 'section';
@@ -360,6 +360,7 @@ import { hasExtensionContext, storageSyncGet, storageSyncRemove } from './utils/
         StorageKey.TRACK_SEARCHES,
         StorageKey.API_BASE_URL,
         StorageKey.API_KEY,
+        StorageKey.OPENMEMORY_DEBUG,
       ],
       function (result) {
         const toggleCheckbox = memoryToggleSection.querySelector('#mem0Toggle') as HTMLInputElement;
@@ -373,6 +374,13 @@ import { hasExtensionContext, storageSyncGet, storageSyncRemove } from './utils/
         ) as HTMLInputElement;
         if (trackSearchesCheckbox) {
           trackSearchesCheckbox.checked = result[StorageKey.TRACK_SEARCHES] === true;
+        }
+
+        const debugCheckbox = debugSection.querySelector(
+          '#openMemoryDebugToggle'
+        ) as HTMLInputElement;
+        if (debugCheckbox) {
+          debugCheckbox.checked = result[StorageKey.OPENMEMORY_DEBUG] === true;
         }
 
         const userIdInput = userIdSection.querySelector('#userIdInput') as HTMLInputElement;
@@ -453,7 +461,8 @@ import { hasExtensionContext, storageSyncGet, storageSyncRemove } from './utils/
       trackSearchSection,
       serverUrlSection,
       dashboardUrlSection,
-      apiKeySection
+      apiKeySection,
+      debugSection
     );
 
     document.body.appendChild(sidebarContainer);
@@ -488,7 +497,8 @@ import { hasExtensionContext, storageSyncGet, storageSyncRemove } from './utils/
     trackSearchSection: HTMLElement,
     serverUrlSection: HTMLElement,
     dashboardUrlSection: HTMLElement,
-    apiKeySection: HTMLElement
+    apiKeySection: HTMLElement,
+    debugSection: HTMLElement
   ): void {
     // Show loading state
     saveBtn.disabled = true;
@@ -507,6 +517,7 @@ import { hasExtensionContext, storageSyncGet, storageSyncRemove } from './utils/
     const trackSearchesCheckbox = trackSearchSection.querySelector(
       '#trackSearchesToggle'
     ) as HTMLInputElement;
+    const debugCheckbox = debugSection.querySelector('#openMemoryDebugToggle') as HTMLInputElement;
     const serverUrlInput = serverUrlSection.querySelector('#serverUrlInput') as HTMLInputElement;
     const dashboardUrlInput = dashboardUrlSection.querySelector('#dashboardUrlInput') as HTMLInputElement;
     const apiKeyInput = apiKeySection.querySelector('#apiKeyInput') as HTMLInputElement;
@@ -528,6 +539,7 @@ import { hasExtensionContext, storageSyncGet, storageSyncRemove } from './utils/
       similarity_threshold: similarityThreshold,
       top_k: topK,
       track_searches: Boolean(trackSearchesCheckbox?.checked),
+      [StorageKey.OPENMEMORY_DEBUG]: Boolean(debugCheckbox?.checked),
     };
     if (apiKey) {
       storageData[StorageKey.API_KEY] = apiKey;
@@ -585,7 +597,8 @@ import { hasExtensionContext, storageSyncGet, storageSyncRemove } from './utils/
     trackSearchSection: HTMLElement,
     serverUrlSection: HTMLElement,
     dashboardUrlSection: HTMLElement,
-    apiKeySection: HTMLElement
+    apiKeySection: HTMLElement,
+    debugSection: HTMLElement
   ): void {
     // Close button
     const closeBtn = sidebarContainer.querySelector('#closeBtn') as HTMLButtonElement;
@@ -671,7 +684,8 @@ import { hasExtensionContext, storageSyncGet, storageSyncRemove } from './utils/
         trackSearchSection,
         serverUrlSection,
         dashboardUrlSection,
-        apiKeySection
+        apiKeySection,
+        debugSection
       );
     });
   }

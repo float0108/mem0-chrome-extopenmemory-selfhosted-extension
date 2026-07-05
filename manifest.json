@@ -71,6 +71,10 @@
     },
     {
       "matches": ["<all_urls>"],
+      "exclude_matches": [
+        "https://chatgpt.com/*",
+        "https://chat.openai.com/*"
+      ],
       "js": ["src/search_tracker.ts"],
       "run_at": "document_idle",
       "all_frames": false
