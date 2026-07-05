@@ -20,7 +20,7 @@ export type ApiMemoryRequest = {
     page_url?: string;
     engine?: string;
   };
-  source: string;
+  source?: string;
   org_id?: string;
   project_id?: string;
 };
@@ -43,8 +43,9 @@ export type LoginData = Partial<{
   access_token: string;
 }>;
 
-/** Default user ID constant */
-export const DEFAULT_USER_ID = 'chrome-extension-user';
+/** Self-hosted default (Seth mem0 OSS) */
+export const OSS_API_BASE_DEFAULT = 'http://127.0.0.1:8888';
+export const DEFAULT_USER_ID = 'seth';
 
 /** Extension source identifier */
 export const SOURCE = 'OPENMEMORY_CHROME_EXTENSION';

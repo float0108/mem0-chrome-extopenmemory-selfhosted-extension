@@ -1,95 +1,72 @@
-> [!CAUTION]
-> ## This project has been archived
->
-> **mem0-chrome-extension** is no longer actively maintained and this repository is now a public archive.
->
-> Thank you to the 600+ stargazers, 97 forkers, and every contributor who helped shape this project. Your support and feedback meant the world to us.
->
-> **Looking for memory across your AI assistants?** Check out [Mem0](https://www.mem0.ai) for the latest.
->
-> You're welcome to fork this repo and build on it — the MIT license still applies.
+# OpenMemory Chrome extension (self-hosted fork)
 
-# Mem0 Chrome Extension — Cross-LLM Memory
+Active fork of the archived [mem0ai/mem0-chrome-extension](https://github.com/mem0ai/mem0-chrome-extension). Built for **local Mem0 OSS** (no Mem0 cloud sign-in): API on your machine, your API key, your `user_id`.
 
-Mem0 brings ChatGPT-style memory to all your favorite AI assistants. Share context seamlessly across ChatGPT, Claude, Perplexity, and more, making your AI interactions more personalized and efficient.
+Maintained by [TheSethRose](https://github.com/TheSethRose) for use with a self-hosted stack (e.g. Hermes + mem0 on `127.0.0.1`).
 
-<a href="https://chromewebstore.google.com/detail/claude-memory/onihkkbipkfeijkadecaafbgagkhglop?hl=en-GB&utm_source=ext_sidebar" style="display: inline-block; padding: 8px 12px; background-color: white; color: #3c4043; text-decoration: none; font-family: 'Roboto', Arial, sans-serif; font-size: 14px; font-weight: 500; border-radius: 4px; border: 1px solid #dadce0; box-shadow: 0 1px 2px rgba(60,64,67,0.3), 0 1px 3px 1px rgba(60,64,67,0.15);">
-  <img src="https://www.google.com/chrome/static/images/chrome-logo.svg" alt="Chrome logo" style="height: 24px; vertical-align: middle; margin-right: 8px;">
-  Add to Chrome, It's Free
-</a>
-<br>
-<br>
+## What changed vs upstream
 
-Built using [Mem0](https://www.mem0.ai) ❤️
+- **Local-first auth** — `X-API-Key` (`m0sk_…`) and server URL in the popup; Google / MemAI cloud login removed for OSS.
+- **Defaults** — `http://127.0.0.1:8888`, user id `seth` (override in popup / sidebar settings).
+- **Popup** — verifies the key against your API before saving; connected view with shortcuts to ChatGPT, dashboard, sidebar.
+- **Sidebar** — lists memories from OSS (`top_k`), system fonts (ChatGPT CSP-safe), clearer errors on 401.
+- **Setup docs** — see [SETH-OSS-SETUP.md](./SETH-OSS-SETUP.md) and [scripts/setup-mac.sh](./scripts/setup-mac.sh).
 
+Upstream is archived; this repo is the place for OSS-focused fixes.
 
-## Demo
+## Prerequisites
 
-Watch the Mem0 Chrome Extension in action (full-resolution video available [here](https://www.youtube.com/watch?v=cByzXztn-YY)):
+- [Node.js](https://nodejs.org/) (LTS)
+- Running **Mem0 OSS** API (default `http://127.0.0.1:8888`) and dashboard (`http://127.0.0.1:3000`)
+- An API key from your mem0 dashboard or `scripts/ensure-oss-key.sh`
 
-https://github.com/user-attachments/assets/a069a178-631e-4b35-a182-9f4fef7735c4
+## Install (unpacked)
 
+```bash
+git clone https://github.com/TheSethRose/mem0-chrome-extension.git
+cd mem0-chrome-extension
+npm install
+npm run build
+```
 
-## Features
+Chrome → `chrome://extensions` → **Developer mode** → **Load unpacked** → select the **`dist/`** folder.
 
-- **Universal Memory Layer:** Share context across ChatGPT, Claude, Perplexity, and more
-- **Smart Context Detection:** Automatically captures relevant information from your conversations
-- **Intelligent Memory Retrieval:** Surfaces relevant memories at the right time
-- **One-click sync** with existing ChatGPT memories
-- **Memory dashboard** to manage all memories
+## Configure
 
-## Installation
+1. Click the extension icon.
+2. **Server URL:** `http://127.0.0.1:8888`
+3. **API key:** your `m0sk_…` key (must show **Saved and verified.**)
+4. On ChatGPT / Claude / etc., open the sidebar (**Ctrl+M** / **⌃+M**) to browse memories.
 
-> **Note:** Make sure you have [Node.js](https://nodejs.org/) installed before proceeding.
+Align **user id** with your agent (e.g. `seth` for Hermes) so ChatGPT and your main assistant share the same memory namespace.
 
-1. Clone this repository.
-2. Navigate to the directory where you cloned the repository.
-3. Run `npm install` to install dependencies.
-4. Run `npm run build` to build the extension.
-5. The built files will be in the `dist` directory.
-6. Open Google Chrome and navigate to `chrome://extensions`.
-7. Enable "Developer mode" in the top right corner.
-8. Click "Load unpacked" and select the `dist` directory containing the extension files.
-9. The Mem0 Chrome Extension should now appear in your Chrome toolbar.
+## Supported sites
 
+ChatGPT, Claude, Perplexity, Gemini, Grok, DeepSeek, Replit, and others (see `manifest.json` content scripts).
 
-## Usage
+## Development
 
-1. After installation, look for the Mem0 icon in your Chrome toolbar
-2. Sign in with Google
-3. Start chatting with any supported AI assistant
-4. For ChatGPT and Perplexity, just press enter while chatting as you would normally
-5. On Claude, click the Mem0 button or use shortcut ^ + M
+```bash
+npm run build    # production bundle → dist/
+npm run dev      # if configured in package.json
+```
 
-## ❤️ Free to Use
-
-Mem0 is completely free with:
-
-- No usage limits
-- No ads
-- All features included
-
-## Configuration
-
-- API Key: Required for connecting to the Mem0 API. Obtain this from your Mem0 Dashboard.
-- User ID: Your unique identifier in the Mem0 system. If not provided, it defaults to 'chrome-extension-user'.
+Do not commit `.local-api-key` (gitignored). Use `scripts/ensure-oss-key.sh` locally to refresh a dev key.
 
 ## Troubleshooting
 
-If you encounter any issues:
+| Symptom | Fix |
+|--------|-----|
+| Sidebar **0 memories** / **401 Invalid API key** | Re-save key in popup; confirm `curl` with same key works against `:8888/memories?user_id=seth` |
+| **CORS** errors from chat sites | Mem0 server needs `CORS_ALLOW_ALL=true` for local dev (see SETH-OSS-SETUP.md) |
+| Console **storage not allowed** | Often harmless iframe noise; reload extension after updates |
 
-- Check your internet connection
-- Verify you're signed in correctly
-- Clear your browser cache if needed
-- Contact support if issues persist
-
-## Privacy and Data Security
-
-Your messages are sent to the Mem0 API for extracting and retrieving memories.
-
-## Contributing
-
-Contributions to improve Mem0 Chrome Extension are welcome. Please feel free to submit pull requests or open issues for bugs and feature requests.
+Full OSS stack notes: [SETH-OSS-SETUP.md](./SETH-OSS-SETUP.md).
 
 ## License
-MIT License
+
+MIT — same as upstream mem0-chrome-extension.
+
+## Credits
+
+Original extension and Mem0 by [mem0ai](https://github.com/mem0ai). This fork keeps the MIT license and targets self-hosted deployments.

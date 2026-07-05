@@ -7,7 +7,7 @@ import { type StorageData, StorageKey } from '../types/storage';
 import { createOrchestrator, type SearchStorage } from '../utils/background_search';
 import { OPENMEMORY_PROMPTS } from '../utils/llm_prompts';
 import { SITE_CONFIG } from '../utils/site_config';
-import { getBrowser, sendExtensionEvent } from '../utils/util_functions';
+import { sendExtensionEvent } from '../utils/util_functions';
 import { OPENMEMORY_UI, type Placement } from '../utils/util_positioning';
 
 // Chrome runtime types
@@ -51,6 +51,7 @@ const claudeSearch = createOrchestrator({
           StorageKey.USER_ID,
           StorageKey.SIMILARITY_THRESHOLD,
           StorageKey.TOP_K,
+          StorageKey.API_BASE_URL,
         ],
         function (items) {
           resolve(items as SearchStorage);
@@ -64,7 +65,6 @@ const claudeSearch = createOrchestrator({
       return [];
     }
 
-    const authHeader = accessToken ? `Bearer ${accessToken}` : `Token ${apiKey}`;
     const userId =
       data[StorageKey.USER_ID_CAMEL] || data[StorageKey.USER_ID] || 'chrome-extension-user';
     const threshold =
@@ -72,6 +72,7 @@ const claudeSearch = createOrchestrator({
         ? data[StorageKey.SIMILARITY_THRESHOLD]
         : 0.1;
     const topK = data[StorageKey.TOP_K] !== undefined ? data[StorageKey.TOP_K] : 10;
+    const baseUrl = data[StorageKey.API_BASE_URL] || 'https://api.mem0.ai';
 
     const optionalParams: OptionalApiParams = {};
     if (data[StorageKey.SELECTED_ORG]) {
@@ -94,20 +95,17 @@ const claudeSearch = createOrchestrator({
     const payload = {
       query: cleanQuery,
       filters: { user_id: userId },
-      rerank: true,
       threshold,
       top_k: topK,
-      filter_memories: false,
-      source: 'OPENMEMORY_CHROME_EXTENSION',
       ...optionalParams,
     };
 
-    const res = await fetch('https://api.mem0.ai/v2/memories/search/', {
+    const reqHeaders: Record<string, string> = { 'Content-Type': 'application/json' };
+    if (accessToken) reqHeaders['Authorization'] = `Bearer ${accessToken}`;
+    else if (apiKey) reqHeaders['X-API-Key'] = apiKey;
+    const res = await fetch(`${baseUrl}/search`, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: authHeader,
-      },
+      headers: reqHeaders,
       body: JSON.stringify(payload),
       signal: opts && opts.signal,
     });
@@ -115,7 +113,8 @@ const claudeSearch = createOrchestrator({
     if (!res.ok) {
       throw new Error(`API request failed with status ${res.status}`);
     }
-    return await res.json();
+    const json = await res.json();
+    return json.results || json;
   },
 
   onSuccess: function (normQuery: string, responseData: MemorySearchItem[]) {
@@ -1409,13 +1408,7 @@ function createMemoryModal(
       // Add click handler for add button
       addButton.addEventListener('click', (e: MouseEvent) => {
         e.stopPropagation();
-        sendExtensionEvent('memory_injection', {
-          provider: 'claude',
-          source: 'OPENMEMORY_CHROME_EXTENSION',
-          browser: getBrowser(),
-          injected_all: false,
-          memory_id: memory.id,
-        });
+        sendExtensionEvent();
 
         // Mark this memory as added
         allMemoriesById.add(String(memory.id));
@@ -1781,13 +1774,7 @@ function createMemoryModal(
         return String(memory.text || '');
       });
 
-    sendExtensionEvent('memory_injection', {
-      provider: 'claude',
-      source: 'OPENMEMORY_CHROME_EXTENSION',
-      browser: getBrowser(),
-      injected_all: true,
-      memory_count: newMemories.length,
-    });
+    sendExtensionEvent();
 
     // Add new memories to allMemories (don't replace existing ones)
     if (newMemories.length > 0) {
@@ -2201,6 +2188,7 @@ async function handleMem0Modal(
           StorageKey.USER_ID,
           StorageKey.SIMILARITY_THRESHOLD,
           StorageKey.TOP_K,
+          StorageKey.API_BASE_URL,
         ],
         function (items) {
           resolve(items);
@@ -2208,6 +2196,7 @@ async function handleMem0Modal(
       );
     });
 
+    const baseUrl = data.baseUrl || 'https://api.mem0.ai';
     const apiKey = data.apiKey;
     const userId = data.userId || data.user_id || 'chrome-extension-user';
     const accessToken = data.access_token;
@@ -2253,13 +2242,7 @@ async function handleMem0Modal(
     message = tempDiv.textContent || tempDiv.innerText || message;
     message = message.trim();
 
-    sendExtensionEvent('modal_clicked', {
-      provider: 'claude',
-      source: 'OPENMEMORY_CHROME_EXTENSION',
-      browser: getBrowser(),
-    });
-
-    const authHeader = accessToken ? `Bearer ${accessToken}` : `Token ${apiKey}`;
+    sendExtensionEvent();
 
     const messages = getConversationContext(false); // Use sliding window context
     messages.push({ role: MessageRole.User, content: message });
@@ -2300,20 +2283,20 @@ async function handleMem0Modal(
         const val = (el.textContent || el.value || '').trim();
         return val || message;
       })();
-      console.log("Claude modal search for:", rawInput);
-      console.log("Cache state:", claudeSearch.getState()); 
+      console.log('Claude modal search for:', rawInput);
+      console.log('Cache state:', claudeSearch.getState());
       claudeSearch.runImmediate(rawInput);
     } catch (_) {
       claudeSearch.runImmediate(message);
     }
 
     // New add memory API call (non-blocking)
-    fetch('https://api.mem0.ai/v1/memories/', {
+    const reqHeaders: Record<string, string> = { 'Content-Type': 'application/json' };
+    if (accessToken) reqHeaders['Authorization'] = `Bearer ${accessToken}`;
+    else if (apiKey) reqHeaders['X-API-Key'] = apiKey;
+    fetch(`${baseUrl}/memories`, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: authHeader,
-      },
+      headers: reqHeaders,
       body: JSON.stringify({
         messages: messages,
         user_id: userId,
@@ -2321,7 +2304,6 @@ async function handleMem0Modal(
         metadata: {
           provider: 'Claude',
         },
-        source: 'OPENMEMORY_CHROME_EXTENSION',
         ...optionalParams,
       }),
     })
@@ -2393,22 +2375,21 @@ function getInputValue(): string | null {
 let claudeBackgroundSearchHandler: (() => void) | null = null;
 
 function hookClaudeBackgroundSearchTyping() {
-  
   const inputElement =
     document.querySelector('div[contenteditable="true"]') ||
     document.querySelector('textarea') ||
     document.querySelector('p[data-placeholder="How can I help you today?"]') ||
     document.querySelector('p[data-placeholder="Reply to Claude..."]');
-  
+
   if (!inputElement) {
     return;
   }
-  
+
   if (inputElement.dataset.claudeBackgroundHooked) {
-    return; 
+    return;
   }
 
-  inputElement.dataset.claudeBackgroundHooked = 'true'; 
+  inputElement.dataset.claudeBackgroundHooked = 'true';
 
   if (!claudeBackgroundSearchHandler) {
     claudeBackgroundSearchHandler = function () {
@@ -2417,7 +2398,7 @@ function hookClaudeBackgroundSearchTyping() {
         const MEM0_PLAIN = OPENMEMORY_PROMPTS.memory_header_plain_regex;
         text = text.replace(MEM0_PLAIN, '').trim();
       } catch {}
-      console.log("Claude background search triggered:", text); 
+      console.log('Claude background search triggered:', text);
       claudeSearch.setText(text);
     };
   }
@@ -2441,7 +2422,7 @@ async function updateMemoryEnabled() {
 function initializeMem0Integration(): void {
   console.log('🚀 initializeMem0Integration started');
   updateMemoryEnabled();
-  hookClaudeBackgroundSearchTyping(); 
+  hookClaudeBackgroundSearchTyping();
   if (!(OPENMEMORY_UI && OPENMEMORY_UI.mountOnEditorFocus)) {
     // addMem0Button(); // Removed: OPENMEMORY_UI handles icon mounting
   }
@@ -3097,6 +3078,7 @@ async function captureAndStoreMemory(snapshot: string) {
         StorageKey.SELECTED_ORG,
         StorageKey.SELECTED_PROJECT,
         StorageKey.USER_ID,
+        StorageKey.API_BASE_URL,
       ],
       function (items) {
         // Check for chrome.runtime.lastError which indicates extension context issues
@@ -3108,15 +3090,13 @@ async function captureAndStoreMemory(snapshot: string) {
         } catch {
           // Ignore errors when checking chrome.runtime.lastError
         }
+
         // Skip if memory is disabled or no credentials
         if (items.memory_enabled === false || (!items.apiKey && !items.access_token)) {
           return;
         }
 
-        const authHeader = items.access_token
-          ? `Bearer ${items.access_token}`
-          : `Token ${items.apiKey}`;
-
+        const baseUrl = items.baseUrl || 'https://api.mem0.ai';
         const userId = items.userId || items.user_id || 'chrome-extension-user';
 
         // Get recent messages for context using sliding window
@@ -3133,11 +3113,15 @@ async function captureAndStoreMemory(snapshot: string) {
         }
 
         // Send memory to mem0 API asynchronously without waiting for response
-        fetch('https://api.mem0.ai/v1/memories/', {
+        fetch(`${baseUrl}/memories`, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
-            Authorization: authHeader,
+            ...(items.access_token
+              ? { Authorization: `Bearer ${items.access_token}` }
+              : items.apiKey
+                ? { 'X-API-Key': items.apiKey }
+                : {}),
           },
           body: JSON.stringify({
             messages: contextMessages,
@@ -3146,7 +3130,6 @@ async function captureAndStoreMemory(snapshot: string) {
             metadata: {
               provider: 'Claude',
             },
-            source: 'OPENMEMORY_CHROME_EXTENSION',
             ...optionalParams,
           }),
         })
@@ -3458,7 +3441,7 @@ function detectNavigation() {
       // Re-initialize conversation history from new DOM
       initializeConversationHistoryFromDOM();
 
-      hookClaudeBackgroundSearchTyping(); 
+      hookClaudeBackgroundSearchTyping();
 
       // Re-add buttons and listeners
       if (!(OPENMEMORY_UI && OPENMEMORY_UI.mountOnEditorFocus)) {

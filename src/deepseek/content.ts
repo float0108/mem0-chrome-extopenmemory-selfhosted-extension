@@ -6,7 +6,7 @@ import { StorageKey } from '../types/storage';
 import { createOrchestrator, type SearchStorage } from '../utils/background_search';
 import { OPENMEMORY_PROMPTS } from '../utils/llm_prompts';
 import { SITE_CONFIG } from '../utils/site_config';
-import { getBrowser, sendExtensionEvent } from '../utils/util_functions';
+import { sendExtensionEvent } from '../utils/util_functions';
 import { OPENMEMORY_UI, type Placement } from '../utils/util_positioning';
 
 export {};
@@ -612,8 +612,6 @@ function getAuthDetails(): Promise<{ apiKey: string; accessToken: string; userId
   });
 }
 
-const MEM0_API_BASE_URL = 'https://api.mem0.ai';
-
 let currentModalSourceButtonId: string | null = null;
 
 const deepseekSearch = createOrchestrator({
@@ -629,6 +627,7 @@ const deepseekSearch = createOrchestrator({
           StorageKey.USER_ID,
           StorageKey.SIMILARITY_THRESHOLD,
           StorageKey.TOP_K,
+          StorageKey.API_BASE_URL,
         ],
         function (items) {
           resolve(items as SearchStorage);
@@ -642,7 +641,6 @@ const deepseekSearch = createOrchestrator({
       return [];
     }
 
-    const authHeader = accessToken ? `Bearer ${accessToken}` : `Token ${apiKey}`;
     const userId =
       data[StorageKey.USER_ID_CAMEL] || data[StorageKey.USER_ID] || 'chrome-extension-user';
     const threshold =
@@ -650,6 +648,7 @@ const deepseekSearch = createOrchestrator({
         ? data[StorageKey.SIMILARITY_THRESHOLD]
         : 0.1;
     const topK = data[StorageKey.TOP_K] !== undefined ? data[StorageKey.TOP_K] : 10;
+    const baseUrl = data[StorageKey.API_BASE_URL] || 'https://api.mem0.ai';
 
     const optionalParams: OptionalApiParams = {};
     if (data[StorageKey.SELECTED_ORG]) {
@@ -662,20 +661,18 @@ const deepseekSearch = createOrchestrator({
     const payload = {
       query,
       filters: { user_id: userId },
-      rerank: true,
       threshold: threshold,
       top_k: topK,
-      filter_memories: false,
-      source: 'OPENMEMORY_CHROME_EXTENSION',
       ...optionalParams,
     };
 
-    const res = await fetch('https://api.mem0.ai/v2/memories/search/', {
+    const reqHeaders: Record<string, string> = { 'Content-Type': 'application/json' };
+    if (accessToken) reqHeaders['Authorization'] = `Bearer ${accessToken}`;
+    else if (apiKey) reqHeaders['X-API-Key'] = apiKey;
+
+    const res = await fetch(`${baseUrl}/search`, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: authHeader,
-      },
+      headers: reqHeaders,
       body: JSON.stringify(payload),
       signal: opts && opts.signal,
     });
@@ -683,7 +680,11 @@ const deepseekSearch = createOrchestrator({
     if (!res.ok) {
       throw new Error(`API request failed with status ${res.status}`);
     }
-    return await res.json();
+    const json = await res.json();
+    if (json && json.results) {
+      return json.results;
+    }
+    return json;
   },
 
   // Don’t render on prefetch. When modal is open, update it.
@@ -824,6 +825,7 @@ function addMemory(memoryText: string) {
           StorageKey.SELECTED_ORG,
           StorageKey.SELECTED_PROJECT,
           StorageKey.USER_ID,
+          StorageKey.API_BASE_URL,
         ]);
         const userId = items.userId || items.user_id || 'chrome-extension-user';
 
@@ -845,11 +847,12 @@ function addMemory(memoryText: string) {
         };
         if (items.access_token) {
           headers['Authorization'] = `Bearer ${items.access_token}`;
-        } else {
-          headers['Authorization'] = `Api-Key ${items.apiKey}`;
+        } else if (items.apiKey) {
+          headers['X-API-Key'] = items.apiKey;
         }
 
-        const url = `${MEM0_API_BASE_URL}/v1/memories/`;
+        const baseUrl = items[StorageKey.API_BASE_URL] || 'https://api.mem0.ai';
+        const url = `${baseUrl}/memories`;
         const body = JSON.stringify({
           messages: [
             {
@@ -858,7 +861,6 @@ function addMemory(memoryText: string) {
             },
           ],
           user_id: userId,
-          source: 'OPENMEMORY_CHROME_EXTENSION',
           ...optionalParams,
         });
 
@@ -1729,13 +1731,7 @@ function createMemoryModal(
       // Add click handler for add button
       addButton.addEventListener('click', (e: MouseEvent) => {
         e.stopPropagation();
-        sendExtensionEvent('memory_injection', {
-          provider: 'deepseek',
-          source: 'OPENMEMORY_CHROME_EXTENSION',
-          browser: getBrowser(),
-          injected_all: false,
-          memory_id: memory.id,
-        });
+        sendExtensionEvent();
 
         // Add this memory
         allMemoriesById.add(String(memory.id));
@@ -1863,13 +1859,7 @@ function createMemoryModal(
         return String(memory.memory || memory.text || '');
       });
 
-    sendExtensionEvent('memory_injection', {
-      provider: 'deepseek',
-      source: 'OPENMEMORY_CHROME_EXTENSION',
-      browser: getBrowser(),
-      injected_all: true,
-      memory_count: newMemories.length,
-    });
+    sendExtensionEvent();
     // Add all new memories to allMemories
     allMemories.push(...newMemories);
 
@@ -2044,11 +2034,7 @@ async function handleMem0Modal(sourceButtonId: string | null = null): Promise<vo
         return;
       }
 
-      sendExtensionEvent('modal_clicked', {
-        provider: 'deepseek',
-        source: 'OPENMEMORY_CHROME_EXTENSION',
-        browser: getBrowser(),
-      });
+      sendExtensionEvent();
       currentModalSourceButtonId = sourceButtonId;
       deepseekSearch.runImmediate(message);
 

@@ -10,9 +10,7 @@
   },
   "permissions": ["storage", "activeTab", "contextMenus", "scripting", "webNavigation"],
   "host_permissions": [
-    "https://api.mem0.ai/*",
-    "https://app.mem0.ai/*",
-    "https://claude.ai/*"
+    "<all_urls>"
   ],
   "action": {
     "default_popup": "src/popup.html",
@@ -62,19 +60,20 @@
     {
       "matches": ["<all_urls>"],
       "js": ["src/sidebar.ts"],
-      "run_at": "document_end"
-    }, 
+      "run_at": "document_end",
+      "all_frames": false
+    },
     {
-      "matches": ["<all_urls>"], 
-      "js": ["src/selection_context.ts"], 
+      "matches": ["<all_urls>"],
+      "js": ["src/selection_context.ts"],
       "run_at": "document_idle",
       "all_frames": true
-    }
-    ,
+    },
     {
       "matches": ["<all_urls>"],
       "js": ["src/search_tracker.ts"],
-      "run_at": "document_idle"
+      "run_at": "document_idle",
+      "all_frames": false
     }
   ],
   "web_accessible_resources": [

@@ -6,7 +6,7 @@ import { type StorageItems, StorageKey } from '../types/storage';
 import { createOrchestrator, type SearchStorage } from '../utils/background_search';
 import { OPENMEMORY_PROMPTS } from '../utils/llm_prompts';
 import { SITE_CONFIG } from '../utils/site_config';
-import { getBrowser, sendExtensionEvent } from '../utils/util_functions';
+import { sendExtensionEvent } from '../utils/util_functions';
 import { OPENMEMORY_UI, type Placement } from '../utils/util_positioning';
 
 export {};
@@ -40,6 +40,7 @@ const grokSearch = createOrchestrator({
           StorageKey.USER_ID,
           StorageKey.SIMILARITY_THRESHOLD,
           StorageKey.TOP_K,
+          StorageKey.API_BASE_URL,
         ],
         function (items) {
           resolve(items as SearchStorage);
@@ -53,7 +54,6 @@ const grokSearch = createOrchestrator({
       return [];
     }
 
-    const authHeader = accessToken ? `Bearer ${accessToken}` : `Token ${apiKey}`;
     const userId =
       data[StorageKey.USER_ID_CAMEL] || data[StorageKey.USER_ID] || 'chrome-extension-user';
     const threshold =
@@ -61,6 +61,7 @@ const grokSearch = createOrchestrator({
         ? data[StorageKey.SIMILARITY_THRESHOLD]
         : 0.1;
     const topK = data[StorageKey.TOP_K] !== undefined ? data[StorageKey.TOP_K] : 10;
+    const baseUrl = data[StorageKey.API_BASE_URL] || 'https://api.mem0.ai';
 
     const optionalParams: OptionalApiParams = {};
     if (data[StorageKey.SELECTED_ORG]) {
@@ -83,20 +84,18 @@ const grokSearch = createOrchestrator({
     const payload = {
       query: cleanQuery,
       filters: { user_id: userId },
-      rerank: true,
       threshold: threshold,
       top_k: topK,
-      filter_memories: false,
-      source: 'OPENMEMORY_CHROME_EXTENSION',
       ...optionalParams,
     };
 
-    const res = await fetch('https://api.mem0.ai/v2/memories/search/', {
+    const reqHeaders: Record<string, string> = { 'Content-Type': 'application/json' };
+    if (accessToken) reqHeaders['Authorization'] = `Bearer ${accessToken}`;
+    else if (apiKey) reqHeaders['X-API-Key'] = apiKey;
+
+    const res = await fetch(`${baseUrl}/search`, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: authHeader,
-      },
+      headers: reqHeaders,
       body: JSON.stringify(payload),
       signal: opts && opts.signal,
     });
@@ -104,7 +103,11 @@ const grokSearch = createOrchestrator({
     if (!res.ok) {
       throw new Error(`API request failed with status ${res.status}`);
     }
-    return await res.json();
+    const json = await res.json();
+    if (json && json.results) {
+      return json.results;
+    }
+    return json;
   },
 
   // Don’t render on prefetch. When modal is open, update it.
@@ -161,10 +164,10 @@ function hookGrokBackgroundSearchTyping() {
   }
 
   if (textarea.dataset.grokBackgroundHooked) {
-    return; 
+    return;
   }
 
-  textarea.dataset.grokBackgroundHooked = 'true'; 
+  textarea.dataset.grokBackgroundHooked = 'true';
 
   if (!grokBackgroundSearchHandler) {
     grokBackgroundSearchHandler = function () {
@@ -183,7 +186,7 @@ function setupInputObserver(): void {
     return;
   }
 
-  hookGrokBackgroundSearchTyping(); 
+  hookGrokBackgroundSearchTyping();
 }
 
 function setInputValue(inputElement: HTMLTextAreaElement | null, value: string): void {
@@ -318,7 +321,7 @@ function setInputValue(inputElement: HTMLTextAreaElement | null, value: string):
 
 function initializeMem0Integration(): void {
   setupInputObserver();
-  hookGrokBackgroundSearchTyping(); 
+  hookGrokBackgroundSearchTyping();
 
   // Set up mutation observer to reinject elements when DOM changes
   // Cache-first mount (before focus)
@@ -741,12 +744,12 @@ function updateNotificationDot(): void {
     mo.observe(textarea, { characterData: true, subtree: true });
 
     if (!textarea.dataset.grokCheckTextHooked) {
-      textarea.dataset.grokCheckTextHooked = 'true'; 
+      textarea.dataset.grokCheckTextHooked = 'true';
       textarea.addEventListener('input', checkForText);
       textarea.addEventListener('keyup', checkForText);
       textarea.addEventListener('focus', checkForText);
     }
-    
+
     checkForText();
     setTimeout(checkForText, 500);
   } else {
@@ -1360,13 +1363,7 @@ function createMemoryModal(memoryItems: MemoryItem[], isLoading: boolean = false
       addButton.addEventListener('click', (e: MouseEvent) => {
         e.stopPropagation();
 
-        sendExtensionEvent('memory_injection', {
-          provider: 'grok',
-          source: 'OPENMEMORY_CHROME_EXTENSION',
-          browser: getBrowser(),
-          injected_all: false,
-          memory_id: memory.id,
-        });
+        sendExtensionEvent();
 
         // Add this memory
         allMemoriesById.add(String(memory.id));
@@ -1706,13 +1703,7 @@ function createMemoryModal(memoryItems: MemoryItem[], isLoading: boolean = false
         return String(memory.text || '');
       });
 
-    sendExtensionEvent('memory_injection', {
-      provider: 'grok',
-      source: 'OPENMEMORY_CHROME_EXTENSION',
-      browser: getBrowser(),
-      injected_all: true,
-      memory_count: newMemories.length,
-    });
+    sendExtensionEvent();
 
     // Add all new memories to allMemories
     allMemories.push(...newMemories);
@@ -1871,6 +1862,7 @@ async function handleMem0Modal() {
           StorageKey.USER_ID,
           StorageKey.SIMILARITY_THRESHOLD,
           StorageKey.TOP_K,
+          StorageKey.API_BASE_URL,
         ],
         function (items) {
           resolve(items as StorageItems);
@@ -1888,13 +1880,7 @@ async function handleMem0Modal() {
       return;
     }
 
-    sendExtensionEvent('modal_clicked', {
-      provider: 'grok',
-      source: 'OPENMEMORY_CHROME_EXTENSION',
-      browser: getBrowser(),
-    });
-
-    const authHeader = accessToken ? `Bearer ${accessToken}` : `Token ${apiKey}`;
+    sendExtensionEvent();
 
     const messages = [{ role: MessageRole.User, content: message }];
 
@@ -1905,6 +1891,11 @@ async function handleMem0Modal() {
     if (data[StorageKey.SELECTED_PROJECT]) {
       optionalParams.project_id = data[StorageKey.SELECTED_PROJECT];
     }
+    const baseUrl = data[StorageKey.API_BASE_URL] || 'https://api.mem0.ai';
+
+    const reqHeaders: Record<string, string> = { 'Content-Type': 'application/json' };
+    if (accessToken) reqHeaders['Authorization'] = `Bearer ${accessToken}`;
+    else if (apiKey) reqHeaders['X-API-Key'] = apiKey;
 
     try {
       const textarea = getTextarea();
@@ -1915,12 +1906,9 @@ async function handleMem0Modal() {
     }
 
     // Proceed with adding memory asynchronously without awaiting
-    fetch('https://api.mem0.ai/v1/memories/', {
+    fetch(`${baseUrl}/memories`, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: authHeader,
-      },
+      headers: reqHeaders,
       body: JSON.stringify({
         messages: messages,
         user_id: userId,
@@ -1928,7 +1916,6 @@ async function handleMem0Modal() {
         metadata: {
           provider: 'Grok',
         },
-        source: 'OPENMEMORY_CHROME_EXTENSION',
         ...optionalParams,
       }),
     }).catch(error => {

@@ -1,4 +1,4 @@
-import { type ApiMemoryRequest, DEFAULT_USER_ID, MessageRole, SOURCE } from './types/api';
+import { type ApiMemoryRequest, DEFAULT_USER_ID, MessageRole } from './types/api';
 import {
   MessageType,
   type SelectionContextResponse,
@@ -8,6 +8,7 @@ import {
 import { Category, Provider } from './types/providers';
 import type { Settings } from './types/settings';
 import { StorageKey } from './types/storage';
+import { buildAuthHeaders } from './utils/util_functions';
 
 export function initContextMenuMemory(): void {
   try {
@@ -150,6 +151,7 @@ function getSettings(): Promise<Settings> {
         StorageKey.SELECTED_ORG,
         StorageKey.SELECTED_PROJECT,
         StorageKey.MEMORY_ENABLED,
+        StorageKey.API_BASE_URL,
       ],
       d => {
         resolve({
@@ -160,6 +162,7 @@ function getSettings(): Promise<Settings> {
           orgId: d[StorageKey.SELECTED_ORG],
           projectId: d[StorageKey.SELECTED_PROJECT],
           memoryEnabled: d[StorageKey.MEMORY_ENABLED] !== false,
+          baseUrl: d[StorageKey.API_BASE_URL] || 'https://api.mem0.ai',
         });
       }
     );
@@ -167,12 +170,8 @@ function getSettings(): Promise<Settings> {
 }
 
 async function addMemory(content: string, settings: Settings): Promise<boolean> {
-  const headers: Record<string, string> = { 'Content-Type': 'application/json' };
-  if (settings.accessToken) {
-    headers.Authorization = `Bearer ${settings.accessToken}`;
-  } else if (settings.apiKey) {
-    headers.Authorization = `Token ${settings.apiKey}`;
-  } else {
+  const headers = buildAuthHeaders(settings.apiKey ?? undefined, settings.accessToken ?? undefined);
+  if (!headers['X-API-Key'] && !headers['Authorization']) {
     throw new Error('Missing credentials');
   }
 
@@ -183,19 +182,12 @@ async function addMemory(content: string, settings: Settings): Promise<boolean> 
       provider: Provider.ContextMenu,
       category: Category.BOOKMARK,
     },
-    source: SOURCE,
   };
-  if (settings.orgId) {
-    body.org_id = settings.orgId;
-  }
-  if (settings.projectId) {
-    body.project_id = settings.projectId;
-  }
 
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 10000);
   try {
-    const res = await fetch('https://api.mem0.ai/v1/memories/', {
+    const res = await fetch(`${settings.baseUrl}/memories`, {
       method: 'POST',
       headers,
       body: JSON.stringify(body),

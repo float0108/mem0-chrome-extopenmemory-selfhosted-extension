@@ -3,7 +3,7 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Mem0 Sign In</title>
+    <title>OpenMemory</title>
     <style>
       body {
         font-family:
@@ -21,12 +21,6 @@
         justify-content: center;
         margin-bottom: 16px;
       }
-      .logo {
-        width: 24px;
-        height: 24px;
-        border-radius: 50%;
-        margin-right: 12px;
-      }
       .heading {
         margin: 0;
         font-size: 18px;
@@ -36,49 +30,131 @@
         text-align: center;
       }
       .message {
-        margin-bottom: 24px;
+        margin-bottom: 16px;
         color: #d4d4d8;
         font-size: 14px;
         line-height: 1.5;
-        text-align: center;
       }
-      .button {
+      .input-group {
+        margin-top: 12px;
+        text-align: left;
+      }
+      .input-group label {
+        display: block;
+        font-size: 12px;
+        color: #a1a1aa;
+        margin-bottom: 6px;
+      }
+      .input-group input {
+        width: 100%;
+        padding: 10px 12px;
+        background: #27272a;
+        border: 1px solid #3b3b3f;
+        border-radius: 8px;
+        color: white;
+        font-size: 13px;
+        box-sizing: border-box;
+        outline: none;
+      }
+      .primary-btn {
         width: 100%;
         padding: 10px;
-        background-color: white;
-        color: black;
+        background: #7a5bf7;
+        color: white;
         border: none;
         border-radius: 8px;
-        font-size: 14px;
+        font-size: 13px;
         font-weight: 600;
-        display: flex;
-        align-items: center;
-        justify-content: center;
         cursor: pointer;
-        transition: background-color 0.2s;
-        margin-top: 20px;
+        margin-top: 12px;
       }
-      .button:hover {
-        background-color: #f5f5f5;
+      .primary-btn:hover {
+        background: #6b4ce6;
       }
-      .google-icon {
-        margin-right: 10px;
+      .secondary-btn {
+        width: 100%;
+        padding: 10px;
+        background: #3b3b3f;
+        color: white;
+        border: none;
+        border-radius: 8px;
+        font-size: 13px;
+        cursor: pointer;
+        margin-top: 8px;
+      }
+      .secondary-btn:hover {
+        background: #4b4b4f;
+      }
+      .link-btn {
+        background: none;
+        border: none;
+        color: #a78bfa;
+        font-size: 12px;
+        cursor: pointer;
+        margin-top: 12px;
+        text-decoration: underline;
+      }
+      #statusMessage {
+        margin-top: 12px;
+        font-size: 12px;
+        min-height: 1.2em;
+      }
+      #statusMessage.error {
+        color: #f87171;
+      }
+      #statusMessage.success {
+        color: #4ade80;
+      }
+      .hidden {
+        display: none !important;
+      }
+      .connected-badge {
+        color: #4ade80;
+        font-size: 13px;
+        margin-bottom: 8px;
+      }
+      .server-hint {
+        font-size: 11px;
+        color: #71717a;
+        word-break: break-all;
+        margin-bottom: 12px;
       }
     </style>
   </head>
   <body>
     <div class="logo-container">
-      <h2 class="heading">Sign in to OpenMemory</h2>
+      <h2 class="heading">OpenMemory</h2>
     </div>
-    <div class="content">
-      <p class="message">
-        Please sign in to access your memories and personalize your conversations!
-      </p>
-      <button id="googleSignInButton" class="button">
-        <img src="../icons/mem0-icon-black.png" alt="Mem0 Logo" class="logo" />
-        <span>Sign in with Mem0</span>
-      </button>
+
+    <div id="setupView" class="content">
+      <p class="message">Connect to your self-hosted mem0 instance.</p>
+      <div class="input-group">
+        <label for="popupApiKeyInput">API key</label>
+        <input type="password" id="popupApiKeyInput" placeholder="m0sk_…" autocomplete="off" />
+      </div>
+      <div class="input-group">
+        <label for="popupServerUrlInput">Server URL</label>
+        <input
+          type="text"
+          id="popupServerUrlInput"
+          placeholder="http://127.0.0.1:8888"
+          value="http://127.0.0.1:8888"
+        />
+      </div>
+      <button type="button" id="saveApiKeyBtn" class="primary-btn">Save</button>
+      <p id="statusMessage" role="status"></p>
     </div>
-    <script type="module" src="/src/popup.ts"></script>
+
+    <div id="connectedView" class="content hidden">
+      <p class="connected-badge">Connected</p>
+      <p id="connectedServerHint" class="server-hint"></p>
+      <p class="message">Open a supported chat site, then use the sidebar or open it from here.</p>
+      <button type="button" id="openSidebarBtn" class="primary-btn">Open memory sidebar</button>
+      <button type="button" id="openChatBtn" class="secondary-btn">Open ChatGPT</button>
+      <button type="button" id="openDashboardBtn" class="secondary-btn">Open mem0 dashboard</button>
+      <button type="button" id="editSettingsBtn" class="link-btn">Edit API key / server</button>
+    </div>
+
+    <script type="module" src="./popup.ts"></script>
   </body>
 </html>

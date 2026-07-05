@@ -7,7 +7,7 @@ import { type StorageData, StorageKey } from '../types/storage';
 import { createOrchestrator, type SearchStorage } from '../utils/background_search';
 import { OPENMEMORY_PROMPTS } from '../utils/llm_prompts';
 import { SITE_CONFIG } from '../utils/site_config';
-import { getBrowser, sendExtensionEvent } from '../utils/util_functions';
+import { sendExtensionEvent } from '../utils/util_functions';
 import { OPENMEMORY_UI } from '../utils/util_positioning';
 
 export {};
@@ -47,6 +47,7 @@ const chatgptSearch = createOrchestrator({
           StorageKey.USER_ID,
           StorageKey.SIMILARITY_THRESHOLD,
           StorageKey.TOP_K,
+          StorageKey.API_BASE_URL,
         ],
         function (items) {
           resolve(items as SearchStorage);
@@ -60,7 +61,9 @@ const chatgptSearch = createOrchestrator({
       return [];
     }
 
-    const authHeader = accessToken ? `Bearer ${accessToken}` : `Token ${apiKey}`;
+    const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+    if (accessToken) headers['Authorization'] = `Bearer ${accessToken}`;
+    else if (apiKey) headers['X-API-Key'] = apiKey;
     const userId =
       data[StorageKey.USER_ID_CAMEL] || data[StorageKey.USER_ID] || 'chrome-extension-user';
     const threshold =
@@ -68,6 +71,7 @@ const chatgptSearch = createOrchestrator({
         ? data[StorageKey.SIMILARITY_THRESHOLD]
         : 0.1;
     const topK = data[StorageKey.TOP_K] !== undefined ? data[StorageKey.TOP_K] : 10;
+    const baseUrl = data[StorageKey.API_BASE_URL] || 'https://api.mem0.ai';
 
     const optionalParams: OptionalApiParams = {};
     if (data[StorageKey.SELECTED_ORG]) {
@@ -80,20 +84,14 @@ const chatgptSearch = createOrchestrator({
     const payload = {
       query,
       filters: { user_id: userId },
-      rerank: true,
       threshold: threshold,
       top_k: topK,
-      filter_memories: false,
-      source: 'OPENMEMORY_CHROME_EXTENSION',
       ...optionalParams,
     };
 
-    const res = await fetch('https://api.mem0.ai/v2/memories/search/', {
+    const res = await fetch(`${baseUrl}/search`, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: authHeader,
-      },
+      headers,
       body: JSON.stringify(payload),
       signal: opts && opts.signal,
     });
@@ -101,7 +99,8 @@ const chatgptSearch = createOrchestrator({
     if (!res.ok) {
       throw new Error(`API request failed with status ${res.status}`);
     }
-    return await res.json();
+    const responseData = await res.json();
+    return responseData.results || responseData;
   },
 
   // Don't render on prefetch. When modal is open, update it.
@@ -760,13 +759,7 @@ function createMemoryModal(
       // Add click handler for add button
       addButton.addEventListener('click', (e: MouseEvent) => {
         e.stopPropagation();
-        sendExtensionEvent('memory_injection', {
-          provider: 'chatgpt',
-          source: 'OPENMEMORY_CHROME_EXTENSION',
-          browser: getBrowser(),
-          injected_all: false,
-          memory_id: memory.id,
-        });
+        sendExtensionEvent();
 
         // Add this memory
         allMemoriesById.add(String(memory.id));
@@ -1083,13 +1076,7 @@ function createMemoryModal(
         return String(memory.text || '');
       });
 
-    sendExtensionEvent('memory_injection', {
-      provider: 'chatgpt',
-      source: 'OPENMEMORY_CHROME_EXTENSION',
-      browser: getBrowser(),
-      injected_all: true,
-      memory_count: newMemories.length,
-    });
+    sendExtensionEvent();
 
     // Add all new memories to allMemories
     allMemories.push(...newMemories);
@@ -1301,6 +1288,7 @@ function captureAndStoreMemory(): void {
       StorageKey.SELECTED_ORG,
       StorageKey.SELECTED_PROJECT,
       StorageKey.USER_ID,
+      StorageKey.API_BASE_URL,
     ],
     function (items) {
       // Skip if memory is disabled or no credentials
@@ -1311,12 +1299,14 @@ function captureAndStoreMemory(): void {
         return;
       }
 
-      const authHeader = items[StorageKey.ACCESS_TOKEN]
-        ? `Bearer ${items[StorageKey.ACCESS_TOKEN]}`
-        : `Token ${items[StorageKey.API_KEY]}`;
+      const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+      if (items[StorageKey.ACCESS_TOKEN])
+        headers['Authorization'] = `Bearer ${items[StorageKey.ACCESS_TOKEN]}`;
+      else if (items[StorageKey.API_KEY]) headers['X-API-Key'] = items[StorageKey.API_KEY];
 
       const userId =
         items[StorageKey.USER_ID_CAMEL] || items[StorageKey.USER_ID] || DEFAULT_USER_ID;
+      const baseUrl = items[StorageKey.API_BASE_URL] || 'https://api.mem0.ai';
 
       // Get recent messages for context (if available)
       const messages = getLastMessages(2);
@@ -1338,16 +1328,12 @@ function captureAndStoreMemory(): void {
         metadata: {
           provider: 'ChatGPT',
         },
-        source: 'OPENMEMORY_CHROME_EXTENSION',
         ...optionalParams,
       };
 
-      fetch('https://api.mem0.ai/v1/memories/', {
+      fetch(`${baseUrl}/memories`, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: authHeader,
-        },
+        headers,
         body: JSON.stringify(storagePayload),
       }).catch(error => {
         console.error('Error saving memory:', error);
@@ -1466,11 +1452,7 @@ async function handleMem0Modal(sourceButtonId: string | null = null): Promise<vo
       return;
     }
 
-    sendExtensionEvent('modal_clicked', {
-      provider: 'chatgpt',
-      source: 'OPENMEMORY_CHROME_EXTENSION',
-      browser: getBrowser(),
-    });
+    sendExtensionEvent();
 
     const messages = getLastMessages(2);
     messages.push({ role: MessageRole.User, content: message });
@@ -1926,15 +1908,15 @@ function hookBackgroundSearchTyping() {
   }
 
   if (inputElement.dataset.mem0BackgroundHooked) {
-    return; 
+    return;
   }
 
-  inputElement.dataset.mem0BackgroundHooked = 'true'; 
+  inputElement.dataset.mem0BackgroundHooked = 'true';
 
   if (!chatgptBackgroundSearchHandler) {
     chatgptBackgroundSearchHandler = function () {
       const text = getInputValue() || '';
-      console.log("Background search for:", text); 
+      console.log('Background search for:', text);
       chatgptSearch.setText(text);
     };
   }
@@ -2110,14 +2092,17 @@ function sendMemoriesToMem0(memories: Array<{ role: string; content: string }>):
         StorageKey.SELECTED_ORG,
         StorageKey.SELECTED_PROJECT,
         StorageKey.USER_ID,
+        StorageKey.API_BASE_URL,
       ],
       function (items) {
         if (items[StorageKey.API_KEY] || items[StorageKey.ACCESS_TOKEN]) {
-          const authHeader = items[StorageKey.ACCESS_TOKEN]
-            ? `Bearer ${items[StorageKey.ACCESS_TOKEN]}`
-            : `Token ${items[StorageKey.API_KEY]}`;
+          const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+          if (items[StorageKey.ACCESS_TOKEN])
+            headers['Authorization'] = `Bearer ${items[StorageKey.ACCESS_TOKEN]}`;
+          else if (items[StorageKey.API_KEY]) headers['X-API-Key'] = items[StorageKey.API_KEY];
           const userId =
             items[StorageKey.USER_ID_CAMEL] || items[StorageKey.USER_ID] || DEFAULT_USER_ID;
+          const baseUrl = items[StorageKey.API_BASE_URL] || 'https://api.mem0.ai';
 
           const optionalParams: OptionalApiParams = {};
           if (items[StorageKey.SELECTED_ORG]) {
@@ -2127,12 +2112,9 @@ function sendMemoriesToMem0(memories: Array<{ role: string; content: string }>):
             optionalParams.project_id = items[StorageKey.SELECTED_PROJECT];
           }
 
-          fetch('https://api.mem0.ai/v1/memories/', {
+          fetch(`${baseUrl}/memories`, {
             method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-              Authorization: authHeader,
-            },
+            headers,
             body: JSON.stringify({
               messages: memories,
               user_id: userId,
@@ -2140,7 +2122,6 @@ function sendMemoriesToMem0(memories: Array<{ role: string; content: string }>):
               metadata: {
                 provider: 'ChatGPT',
               },
-              source: 'OPENMEMORY_CHROME_EXTENSION',
               ...optionalParams,
             }),
           })
@@ -2230,14 +2211,17 @@ function sendMemoryToMem0(
         StorageKey.SELECTED_ORG,
         StorageKey.SELECTED_PROJECT,
         StorageKey.USER_ID,
+        StorageKey.API_BASE_URL,
       ],
       function (items) {
         if (items[StorageKey.API_KEY] || items[StorageKey.ACCESS_TOKEN]) {
-          const authHeader = items[StorageKey.ACCESS_TOKEN]
-            ? `Bearer ${items[StorageKey.ACCESS_TOKEN]}`
-            : `Token ${items[StorageKey.API_KEY]}`;
+          const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+          if (items[StorageKey.ACCESS_TOKEN])
+            headers['Authorization'] = `Bearer ${items[StorageKey.ACCESS_TOKEN]}`;
+          else if (items[StorageKey.API_KEY]) headers['X-API-Key'] = items[StorageKey.API_KEY];
           const userId =
             items[StorageKey.USER_ID_CAMEL] || items[StorageKey.USER_ID] || DEFAULT_USER_ID;
+          const baseUrl = items[StorageKey.API_BASE_URL] || 'https://api.mem0.ai';
 
           const optionalParams: OptionalApiParams = {};
           if (items[StorageKey.SELECTED_ORG]) {
@@ -2247,12 +2231,9 @@ function sendMemoryToMem0(
             optionalParams.project_id = items[StorageKey.SELECTED_PROJECT];
           }
 
-          fetch('https://api.mem0.ai/v1/memories/', {
+          fetch(`${baseUrl}/memories`, {
             method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-              Authorization: authHeader,
-            },
+            headers,
             body: JSON.stringify({
               messages: [{ content: memory.content, role: MessageRole.User }],
               user_id: userId,
@@ -2260,7 +2241,6 @@ function sendMemoryToMem0(
               metadata: {
                 provider: 'ChatGPT',
               },
-              source: 'OPENMEMORY_CHROME_EXTENSION',
               ...optionalParams,
             }),
           })

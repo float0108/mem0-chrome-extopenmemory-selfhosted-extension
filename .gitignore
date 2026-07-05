@@ -18,6 +18,7 @@ Thumbs.db
 .env
 .env.local
 .env.*.local
+.local-api-key
 
 # Chrome extension specific
 *.crx

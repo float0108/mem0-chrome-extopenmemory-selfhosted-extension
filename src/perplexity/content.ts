@@ -6,7 +6,7 @@ import { type StorageItems, StorageKey } from '../types/storage';
 import { createOrchestrator, type SearchStorage } from '../utils/background_search';
 import { OPENMEMORY_PROMPTS } from '../utils/llm_prompts';
 import { SITE_CONFIG } from '../utils/site_config';
-import { getBrowser, sendExtensionEvent } from '../utils/util_functions';
+import { sendExtensionEvent } from '../utils/util_functions';
 import { OPENMEMORY_UI, type Placement } from '../utils/util_positioning';
 
 export {};
@@ -39,6 +39,7 @@ const perplexitySearch = createOrchestrator({
           StorageKey.USER_ID,
           StorageKey.SIMILARITY_THRESHOLD,
           StorageKey.TOP_K,
+          StorageKey.API_BASE_URL,
         ],
         function (items) {
           resolve(items as SearchStorage);
@@ -52,7 +53,6 @@ const perplexitySearch = createOrchestrator({
       return [];
     }
 
-    const authHeader = accessToken ? `Bearer ${accessToken}` : `Token ${apiKey}`;
     const userId =
       data[StorageKey.USER_ID_CAMEL] || data[StorageKey.USER_ID] || 'chrome-extension-user';
     const threshold =
@@ -60,6 +60,7 @@ const perplexitySearch = createOrchestrator({
         ? data[StorageKey.SIMILARITY_THRESHOLD]
         : 0.1;
     const topK = data[StorageKey.TOP_K] !== undefined ? data[StorageKey.TOP_K] : 10;
+    const baseUrl = data[StorageKey.API_BASE_URL] || 'https://api.mem0.ai';
 
     const optionalParams: OptionalApiParams = {};
     if (data[StorageKey.SELECTED_ORG]) {
@@ -72,20 +73,18 @@ const perplexitySearch = createOrchestrator({
     const payload = {
       query,
       filters: { user_id: userId },
-      rerank: true,
       threshold: threshold,
       top_k: topK,
-      filter_memories: false,
-      source: 'OPENMEMORY_CHROME_EXTENSION',
       ...optionalParams,
     };
 
-    const res = await fetch('https://api.mem0.ai/v2/memories/search/', {
+    const reqHeaders: Record<string, string> = { 'Content-Type': 'application/json' };
+    if (accessToken) reqHeaders['Authorization'] = `Bearer ${accessToken}`;
+    else if (apiKey) reqHeaders['X-API-Key'] = apiKey;
+
+    const res = await fetch(`${baseUrl}/search`, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: authHeader,
-      },
+      headers: reqHeaders,
       body: JSON.stringify(payload),
       signal: opts && opts.signal,
     });
@@ -93,7 +92,11 @@ const perplexitySearch = createOrchestrator({
     if (!res.ok) {
       throw new Error(`API request failed with status ${res.status}`);
     }
-    return await res.json();
+    const json = await res.json();
+    if (json && json.results) {
+      return json.results;
+    }
+    return json;
   },
 
   // Don’t render on prefetch. When modal is open, update it.
@@ -1305,13 +1308,7 @@ function createMemoryModal(
         return String(memory.text || '');
       });
 
-    sendExtensionEvent('memory_injection', {
-      provider: 'perplexity',
-      source: 'OPENMEMORY_CHROME_EXTENSION',
-      browser: getBrowser(),
-      injected_all: true,
-      memory_count: newMemories.length,
-    });
+    sendExtensionEvent();
 
     // Add all new memories to allMemories
     allMemories.push(...newMemories);
@@ -1704,13 +1701,7 @@ function createMemoryModal(
         addButton.addEventListener('click', (e: MouseEvent) => {
           e.stopPropagation();
 
-          sendExtensionEvent('memory_injection', {
-            provider: 'perplexity',
-            source: 'OPENMEMORY_CHROME_EXTENSION',
-            browser: getBrowser(),
-            injected_all: false,
-            memory_id: memory.id,
-          });
+          sendExtensionEvent();
 
           // Add this memory
           allMemoriesById.add(String(memory.id));
@@ -2118,6 +2109,7 @@ function captureAndStoreMemory() {
       StorageKey.SELECTED_ORG,
       StorageKey.SELECTED_PROJECT,
       StorageKey.USER_ID,
+      StorageKey.API_BASE_URL,
     ],
     function (items) {
       // Skip if memory is disabled or no credentials
@@ -2125,11 +2117,8 @@ function captureAndStoreMemory() {
         return;
       }
 
-      const authHeader = items.access_token
-        ? `Bearer ${items.access_token}`
-        : `Token ${items.apiKey}`;
-
       const userId = items.userId || items.user_id || 'chrome-extension-user';
+      const baseUrl = items[StorageKey.API_BASE_URL] || 'https://api.mem0.ai';
 
       const optionalParams: OptionalApiParams = {};
       if (items.selected_org) {
@@ -2139,13 +2128,14 @@ function captureAndStoreMemory() {
         optionalParams.project_id = items.selected_project;
       }
 
+      const reqHeaders: Record<string, string> = { 'Content-Type': 'application/json' };
+      if (items.access_token) reqHeaders['Authorization'] = `Bearer ${items.access_token}`;
+      else if (items.apiKey) reqHeaders['X-API-Key'] = items.apiKey;
+
       // Send memory to mem0 API asynchronously without waiting for response
-      fetch('https://api.mem0.ai/v1/memories/', {
+      fetch(`${baseUrl}/memories`, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: authHeader,
-        },
+        headers: reqHeaders,
         body: JSON.stringify({
           messages: [{ role: MessageRole.User, content: message }],
           user_id: userId,
@@ -2153,7 +2143,6 @@ function captureAndStoreMemory() {
           metadata: {
             provider: 'Perplexity',
           },
-          source: 'OPENMEMORY_CHROME_EXTENSION',
           ...optionalParams,
         }),
       }).catch(error => {
@@ -2310,6 +2299,7 @@ async function handleMem0Processing(
           StorageKey.USER_ID,
           StorageKey.SIMILARITY_THRESHOLD,
           StorageKey.TOP_K,
+          StorageKey.API_BASE_URL,
         ],
         function (items) {
           resolve(items as StorageItems);
@@ -2323,6 +2313,7 @@ async function handleMem0Processing(
       'chrome-extension-user') as string;
     const accessToken = data[StorageKey.ACCESS_TOKEN];
     const memoryEnabled = data[StorageKey.MEMORY_ENABLED] !== false; // Default to true if not set
+    const baseUrl = data[StorageKey.API_BASE_URL] || 'https://api.mem0.ai';
 
     const optionalParams: OptionalApiParams = {};
     if (data[StorageKey.SELECTED_ORG]) {
@@ -2352,15 +2343,13 @@ async function handleMem0Processing(
     // Show loading modal now that we've confirmed credentials and memory enabled
     createMemoryModal([], true, sourceButtonId);
 
-    sendExtensionEvent('modal_clicked', {
-      provider: 'perplexity',
-      source: 'OPENMEMORY_CHROME_EXTENSION',
-      browser: getBrowser(),
-    });
-
-    const authHeader = accessToken ? `Bearer ${accessToken}` : `Token ${apiKey}`;
+    sendExtensionEvent();
 
     const messages = [{ role: MessageRole.User, content: message }];
+
+    const reqHeaders: Record<string, string> = { 'Content-Type': 'application/json' };
+    if (accessToken) reqHeaders['Authorization'] = `Bearer ${accessToken}`;
+    else if (apiKey) reqHeaders['X-API-Key'] = apiKey;
 
     // Use orchestrator immediate run
     perplexitySearch.runImmediate(message);
@@ -2376,17 +2365,13 @@ async function handleMem0Processing(
     setInputValue(textarea, originalMessage);
 
     // New add memory API call (non-blocking)
-    fetch('https://api.mem0.ai/v1/memories/', {
+    fetch(`${baseUrl}/memories`, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: authHeader,
-      },
+      headers: reqHeaders,
       body: JSON.stringify({
         messages: messages,
         user_id: userId,
         infer: true,
-        source: 'OPENMEMORY_CHROME_EXTENSION',
         metadata: {
           provider: 'Perplexity',
         },
