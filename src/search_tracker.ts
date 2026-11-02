@@ -1,7 +1,8 @@
-import { DEFAULT_USER_ID } from './types/api';
+import { OSS_API_BASE_DEFAULT, DEFAULT_USER_ID } from './types/api';
 import type { HistoryStateData, HistoryUrl } from './types/browser';
 import type { Settings } from './types/settings';
 import { StorageKey } from './types/storage';
+import { CONFIGURATION_KEYS, isConfigured } from './utils/configuration';
 import { hasExtensionContext, storageSyncGet } from './utils/extension_storage';
 
 (function () {
@@ -15,7 +16,7 @@ import { hasExtensionContext, storageSyncGet } from './utils/extension_storage';
 
   function getSettings(): Promise<Settings> {
     return storageSyncGet([
-      StorageKey.API_KEY,
+      ...CONFIGURATION_KEYS,
       StorageKey.ACCESS_TOKEN,
       StorageKey.USER_ID,
       StorageKey.SELECTED_ORG,
@@ -23,14 +24,14 @@ import { hasExtensionContext, storageSyncGet } from './utils/extension_storage';
       StorageKey.MEMORY_ENABLED,
       StorageKey.API_BASE_URL,
     ]).then(d => ({
-      hasCreds: Boolean(d[StorageKey.API_KEY] || d[StorageKey.ACCESS_TOKEN]),
-      apiKey: d[StorageKey.API_KEY] as string | undefined,
-      accessToken: d[StorageKey.ACCESS_TOKEN] as string | undefined,
+      hasCreds: isConfigured(d),
+      apiKey: (d[StorageKey.API_KEY] as string | undefined) ?? null,
+      accessToken: (d[StorageKey.ACCESS_TOKEN] as string | undefined) ?? null,
       userId: (d[StorageKey.USER_ID] as string | undefined) || DEFAULT_USER_ID,
-      orgId: d[StorageKey.SELECTED_ORG] as string | undefined,
-      projectId: d[StorageKey.SELECTED_PROJECT] as string | undefined,
+      orgId: (d[StorageKey.SELECTED_ORG] as string | undefined) ?? null,
+      projectId: (d[StorageKey.SELECTED_PROJECT] as string | undefined) ?? null,
       memoryEnabled: d[StorageKey.MEMORY_ENABLED] !== false,
-      baseUrl: (d[StorageKey.API_BASE_URL] as string | undefined) || 'https://api.mem0.ai',
+      baseUrl: (d[StorageKey.API_BASE_URL] as string | undefined) || OSS_API_BASE_DEFAULT,
     }));
   }
 

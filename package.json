@@ -1,6 +1,6 @@
 {
-  "name": "mem0-extension",
-  "description": "🧠 OpenMemory keeps your conversations in sync. 🔄 No more repeating yourself—just seamless AI collaboration! ✨",
+  "name": "openmemory-selfhosted-extension",
+  "description": "Browser extension for shared AI memories using a self-hosted Mem0 API.",
   "private": true,
   "type": "module",
   "scripts": {

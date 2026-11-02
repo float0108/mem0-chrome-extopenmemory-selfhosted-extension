@@ -29,3 +29,10 @@ Thumbs.db
 .idea/
 *.sublime-workspace
 *.sublime-project
+
+# Local testing and distribution artifacts
+*.zip
+TEST-RESULTS.txt
+*-test.png
+deepseek-toolbar-*.png
+theme-*.png

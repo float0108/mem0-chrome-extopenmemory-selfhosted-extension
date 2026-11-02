@@ -22,7 +22,7 @@ export function storageSyncGet(keys: string[] | string | null): Promise<Record<s
       reject(new Error('Extension storage unavailable in this page context'));
       return;
     }
-    chrome.storage.sync.get(keys, result => {
+    chrome.storage.sync.get(keys ?? undefined, result => {
       swallowLastError();
       resolve(result);
     });

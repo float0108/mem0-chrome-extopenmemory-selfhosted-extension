@@ -1,4 +1,4 @@
-import { MessageRole } from '../types/api';
+import { OSS_API_BASE_DEFAULT, MessageRole } from '../types/api';
 import type { HistoryStateData } from '../types/browser';
 import type { ExtendedDocument, ExtendedElement } from '../types/dom';
 import type { MemoryItem, MemorySearchItem, OptionalApiParams } from '../types/memory';
@@ -6,7 +6,9 @@ import { SidebarAction } from '../types/messages';
 import { type StorageData, StorageKey } from '../types/storage';
 import { createOrchestrator, type SearchStorage } from '../utils/background_search';
 import { OPENMEMORY_PROMPTS } from '../utils/llm_prompts';
+import { memoryFetch } from '../utils/memory_fetch';
 import { SITE_CONFIG } from '../utils/site_config';
+import { bindTheme } from '../utils/theme';
 import { sendExtensionEvent } from '../utils/util_functions';
 import { OPENMEMORY_UI, type Placement } from '../utils/util_positioning';
 
@@ -65,14 +67,13 @@ const claudeSearch = createOrchestrator({
       return [];
     }
 
-    const userId =
-      data[StorageKey.USER_ID_CAMEL] || data[StorageKey.USER_ID] || 'chrome-extension-user';
+    const userId = data[StorageKey.USER_ID_CAMEL] || data[StorageKey.USER_ID] || '';
     const threshold =
       data[StorageKey.SIMILARITY_THRESHOLD] !== undefined
         ? data[StorageKey.SIMILARITY_THRESHOLD]
         : 0.1;
     const topK = data[StorageKey.TOP_K] !== undefined ? data[StorageKey.TOP_K] : 10;
-    const baseUrl = data[StorageKey.API_BASE_URL] || 'https://api.mem0.ai';
+    const baseUrl = data[StorageKey.API_BASE_URL] || OSS_API_BASE_DEFAULT;
 
     const optionalParams: OptionalApiParams = {};
     if (data[StorageKey.SELECTED_ORG]) {
@@ -101,9 +102,12 @@ const claudeSearch = createOrchestrator({
     };
 
     const reqHeaders: Record<string, string> = { 'Content-Type': 'application/json' };
-    if (accessToken) reqHeaders['Authorization'] = `Bearer ${accessToken}`;
-    else if (apiKey) reqHeaders['X-API-Key'] = apiKey;
-    const res = await fetch(`${baseUrl}/search`, {
+    if (accessToken) {
+      reqHeaders['Authorization'] = `Bearer ${accessToken}`;
+    } else if (apiKey) {
+      reqHeaders['X-API-Key'] = apiKey;
+    }
+    const res = await memoryFetch(`${baseUrl}/search`, {
       method: 'POST',
       headers: reqHeaders,
       body: JSON.stringify(payload),
@@ -240,9 +244,7 @@ const allMemoriesById: Set<string> = new Set<string>();
 
 // Reference to the modal overlay for updates
 let currentModalOverlay:
-  | HTMLDivElement
-  | (HTMLDivElement & { _cleanupDragEvents?: () => void })
-  | null = null;
+  HTMLDivElement | (HTMLDivElement & { _cleanupDragEvents?: () => void }) | null = null;
 
 // Track the current modal container and placement cleanup
 let currentModalContainer: HTMLDivElement | null = null;
@@ -331,7 +333,7 @@ function createPopup(container: HTMLElement, position: string = 'top'): HTMLElem
   display: none;
   position: absolute;
   background-color: #21201C;
-  color: white;
+  color: var(--om-text, white);
   padding: 6px 8px;
   border-radius: 6px;
   font-size: 12px;
@@ -396,7 +398,7 @@ if (inputToolsMenuButton && !hasAnyMem0Button) {
     height: 10px;
     background-color: rgb(128, 221, 162);
     border-radius: 50%;
-    border: 2px solid #1C1C1E;
+    border: 2px solid var(--om-bg, #1C1C1E);
     display: none;
     z-index: 1001;
     pointer-events: none;
@@ -431,7 +433,7 @@ if (inputToolsMenuButton && !hasAnyMem0Button) {
               display: none;
               position: fixed;
               background-color: black;
-              color: white;
+              color: var(--om-text, white);
               padding: 3px 7px;
               border-radius: 6px;
               font-size: 12px;
@@ -545,7 +547,7 @@ if (inputToolsMenuButton && !hasAnyMem0Button) {
         height: 10px;
         background-color: rgb(128, 221, 162);
         border-radius: 50%;
-        border: 2px solid #1C1C1E;
+        border: 2px solid var(--om-bg, #1C1C1E);
         display: none;
         z-index: 1001;
         pointer-events: none;
@@ -561,7 +563,7 @@ if (inputToolsMenuButton && !hasAnyMem0Button) {
               display: none;
               position: fixed;
               background-color: black;
-              color: white;
+              color: var(--om-text, white);
               padding: 3px 7px;
               border-radius: 6px;
               font-size: 12px;
@@ -646,7 +648,7 @@ if (inputToolsMenuButton && !hasAnyMem0Button) {
         height: 10px;
         background-color: rgb(128, 221, 162);
         border-radius: 50%;
-        border: 2px solid #1C1C1E;
+        border: 2px solid var(--om-bg, #1C1C1E);
         display: none;
         z-index: 1001;
         pointer-events: none;
@@ -673,7 +675,7 @@ if (inputToolsMenuButton && !hasAnyMem0Button) {
                   display: none;
                   position: fixed;
                   background-color: black;
-                  color: white;
+                  color: var(--om-text, white);
                   padding: 3px 7px;
                   border-radius: 6px;
                   font-size: 12px;
@@ -873,6 +875,7 @@ function createMemoryModal(
 
   // Create modal overlay
   const modalOverlay = document.createElement('div');
+  bindTheme(modalOverlay);
   modalOverlay.style.cssText = `
     position: fixed;
     top: 0;
@@ -898,17 +901,18 @@ function createMemoryModal(
 
   // Create modal container (placement handled by OPENMEMORY_UI)
   const modalContainer = document.createElement('div');
+  bindTheme(modalContainer);
   modalContainer.style.cssText = `
-    background-color: #1C1C1E;
+    background-color: var(--om-bg, #1C1C1E);
     border-radius: 12px;
     width: ${modalWidth}px;
     height: ${modalHeight}px;
     display: flex;
     flex-direction: column;
-    color: white;
+    color: var(--om-text, white);
     box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
     pointer-events: auto;
-    border: 1px solid #27272A;
+    border: 1px solid var(--om-card, #27272A);
     font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
     overflow: hidden;
   `;
@@ -953,9 +957,9 @@ function createMemoryModal(
   modalHeader.style.cssText = `
     display: flex;
     align-items: center;
-    padding: 10px 16px;
+    padding: 8px 12px;
     justify-content: space-between;
-    background-color: #232325;
+    background-color: var(--om-card, #232325);
     flex-shrink: 0;
     cursor: move;
     user-select: none;
@@ -1029,9 +1033,9 @@ function createMemoryModal(
   const title = document.createElement('div');
   title.textContent = 'OpenMemory';
   title.style.cssText = `
-    font-size: 16px;
+    font-size: 14px;
     font-weight: 600;
-    color: white;
+    color: var(--om-text, white);
   `;
 
   // Create header right section
@@ -1051,13 +1055,13 @@ function createMemoryModal(
     align-items: center;
     padding: 5px 16px;
     gap: 8px;
-    background-color: white;
+    background-color: var(--om-action, white);
     border: none;
     border-radius: 8px;
     cursor: pointer;
     font-size: 12px;
     font-weight: 600;
-    color: black;
+    color: var(--om-on-action, black);
   `;
   addToPromptBtn.textContent = 'Add to Prompt';
 
@@ -1078,7 +1082,7 @@ function createMemoryModal(
     opacity: 0.6;
     transition: opacity 0.2s;
   `;
-  settingsBtn.innerHTML = `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#FFFFFF" xmlns="http://www.w3.org/2000/svg">
+  settingsBtn.innerHTML = `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--om-text, #FFFFFF)" xmlns="http://www.w3.org/2000/svg">
     <path d="M12 15a3 3 0 100-6 3 3 0 000 6z" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
     <path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-2 2 2 2 0 01-2-2v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83 0 2 2 0 010-2.83l.06-.06a1.65 1.65 0 00.33-1.82 1.65 1.65 0 00-1.51-1H3a2 2 0 01-2-2 2 2 0 012-2h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 010-2.83 2 2 0 012.83 0l.06.06a1.65 1.65 0 001.82.33H9a1.65 1.65 0 001-1.51V3a2 2 0 012-2 2 2 0 012 2v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 0 2 2 0 010 2.83l-.06.06a1.65 1.65 0 00-.33 1.82V9a1.65 1.65 0 001.51 1H21a2 2 0 012 2 2 2 0 01-2 2h-.09a1.65 1.65 0 00-1.51 1z" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
   </svg>`;
@@ -1108,7 +1112,7 @@ function createMemoryModal(
   contentSection.style.cssText = `
     display: flex;
     flex-direction: column;
-    padding: 0 16px;
+    padding: 0 12px;
     gap: 12px;
     overflow: hidden;
     flex: 1;
@@ -1118,9 +1122,9 @@ function createMemoryModal(
   // Create memories counter
   const memoriesCounter = document.createElement('div');
   memoriesCounter.style.cssText = `
-    font-size: 16px;
+    font-size: 14px;
     font-weight: 600;
-    color: #FFFFFF;
+    color: var(--om-text, #FFFFFF);
     margin-top: 16px;
     flex-shrink: 0;
   `;
@@ -1168,7 +1172,7 @@ function createMemoryModal(
         align-items: flex-start;
         justify-content: space-between;
         padding: 12px;
-        background-color: #27272A;
+        background-color: var(--om-card, #27272A);
         border-radius: 8px;
         height: 72px;
         flex-shrink: 0;
@@ -1177,7 +1181,7 @@ function createMemoryModal(
 
       const skeletonText = document.createElement('div');
       skeletonText.style.cssText = `
-        background-color: #383838;
+        background-color: var(--om-button, #383838);
         border-radius: 4px;
         height: 14px;
         width: 85%;
@@ -1186,7 +1190,7 @@ function createMemoryModal(
 
       const skeletonText2 = document.createElement('div');
       skeletonText2.style.cssText = `
-        background-color: #383838;
+        background-color: var(--om-button, #383838);
         border-radius: 4px;
         height: 14px;
         width: 65%;
@@ -1204,7 +1208,7 @@ function createMemoryModal(
         width: 20px;
         height: 20px;
         border-radius: 50%;
-        background-color: #383838;
+        background-color: var(--om-button, #383838);
       `;
 
       const skeletonButton2 = document.createElement('div');
@@ -1212,7 +1216,7 @@ function createMemoryModal(
         width: 20px;
         height: 20px;
         border-radius: 50%;
-        background-color: #383838;
+        background-color: var(--om-button, #383838);
       `;
 
       skeletonActions.appendChild(skeletonButton1);
@@ -1267,7 +1271,7 @@ function createMemoryModal(
     contentWrapper.style.scrollbarWidth = 'none';
     contentWrapper.style.msOverflowStyle = 'none';
     contentWrapper.style.cssText += '::-webkit-scrollbar { display: none; }';
-    memoryContainer.style.backgroundColor = '#1C1C1E';
+    memoryContainer.style.backgroundColor = 'var(--om-bg, #1C1C1E)';
     memoryContainer.style.maxHeight = '300px'; // Allow expansion but within container
     memoryContainer.style.overflow = 'hidden';
     removeButton.style.display = 'flex';
@@ -1289,7 +1293,7 @@ function createMemoryModal(
     memoryText.style.webkitLineClamp = '2';
     memoryText.style.height = '42px';
     contentWrapper.style.overflowY = 'visible';
-    memoryContainer.style.backgroundColor = '#27272A';
+    memoryContainer.style.backgroundColor = 'var(--om-card, #27272A)';
     memoryContainer.style.maxHeight = '72px';
     memoryContainer.style.overflow = 'hidden';
     removeButton.style.display = 'none';
@@ -1356,7 +1360,7 @@ function createMemoryModal(
         align-items: flex-start;
         justify-content: space-between;
         padding: 12px; 
-        background-color: #27272A;
+        background-color: var(--om-card, #27272A);
         border-radius: 8px;
         cursor: pointer;
         transition: all 0.2s ease;
@@ -1368,9 +1372,9 @@ function createMemoryModal(
 
       const memoryText = document.createElement('div');
       memoryText.style.cssText = `
-        font-size: 14px;
+        font-size: 12px;
         line-height: 1.5;
-        color: #D4D4D8;
+        color: var(--om-text, #D4D4D8);
         flex-grow: 1;
         display: -webkit-box;
         -webkit-line-clamp: 2;
@@ -1395,8 +1399,8 @@ function createMemoryModal(
         border: none;
         cursor: pointer;
         padding: 4px;
-        background:rgb(66, 66, 69);
-        color:rgb(199, 199, 201);
+        background:var(--om-button, rgb(66, 66, 69));
+        color:var(--om-muted, rgb(199, 199, 201));
         border-radius: 100%;
         transition: all 0.2s ease;
       `;
@@ -1444,7 +1448,7 @@ function createMemoryModal(
         border: none;
         cursor: pointer;
         padding: 4px;
-        color: #A1A1AA;
+        color: var(--om-muted, #A1A1AA);
       `;
       menuButton.innerHTML = `<svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor" xmlns="http://www.w3.org/2000/svg">
         <circle cx="12" cy="12" r="2"/>
@@ -1461,8 +1465,8 @@ function createMemoryModal(
         display: none;
         align-items: center;
         gap: 6px;
-        background:rgb(66, 66, 69);
-        color:rgb(199, 199, 201);
+        background:var(--om-button, rgb(66, 66, 69));
+        color:var(--om-muted, rgb(199, 199, 201));
         border-radius: 8px;
         padding: 2px 4px;
         border: none;
@@ -1530,10 +1534,14 @@ function createMemoryModal(
 
       // Add hover effect
       memoryContainer.addEventListener('mouseenter', () => {
-        memoryContainer.style.backgroundColor = isExpanded.value ? '#18181B' : '#323232';
+        memoryContainer.style.backgroundColor = isExpanded.value
+          ? 'var(--om-bg, #18181B)'
+          : 'var(--om-hover, #323232)';
       });
       memoryContainer.addEventListener('mouseleave', () => {
-        memoryContainer.style.backgroundColor = isExpanded.value ? '#1C1C1E' : '#27272A';
+        memoryContainer.style.backgroundColor = isExpanded.value
+          ? 'var(--om-bg, #1C1C1E)'
+          : 'var(--om-card, #27272A)';
       });
     }
 
@@ -1568,7 +1576,7 @@ function createMemoryModal(
     `;
 
     const emptyIcon = document.createElement('div');
-    emptyIcon.innerHTML = `<svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="#71717A" xmlns="http://www.w3.org/2000/svg">
+    emptyIcon.innerHTML = `<svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="var(--om-muted, #71717A)" xmlns="http://www.w3.org/2000/svg">
       <path d="M9 3H5a2 2 0 00-2 2v4m6-6h10a2 2 0 012 2v10a2 2 0 01-2 2h-4M3 21h4a2 2 0 002-2v-4m-6 6V9m18 12a9 9 0 11-18 0 9 9 0 0118 0z" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
     </svg>`;
     emptyIcon.style.marginBottom = '16px';
@@ -1576,8 +1584,8 @@ function createMemoryModal(
     const emptyText = document.createElement('div');
     emptyText.textContent = 'No relevant memories found';
     emptyText.style.cssText = `
-      color: #71717A;
-      font-size: 14px;
+      color: var(--om-muted, #71717A);
+      font-size: 12px;
       font-weight: 500;
     `;
 
@@ -1640,10 +1648,10 @@ function createMemoryModal(
   // Navigation buttons
   const prevButton = document.createElement('button');
   prevButton.innerHTML = `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-    <path d="M15 19l-7-7 7-7" stroke="#A1A1AA" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+    <path d="M15 19l-7-7 7-7" stroke="var(--om-muted, #A1A1AA)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
   </svg>`;
   prevButton.style.cssText = `
-    background: #27272A;
+    background: var(--om-card, #27272A);
     border: none;
     border-radius: 50%;
     width: 32px;
@@ -1657,7 +1665,7 @@ function createMemoryModal(
 
   const nextButton = document.createElement('button');
   nextButton.innerHTML = `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-    <path d="M9 5l7 7-7 7" stroke="#A1A1AA" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+    <path d="M9 5l7 7-7 7" stroke="var(--om-muted, #A1A1AA)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
   </svg>`;
   nextButton.style.cssText = prevButton.style.cssText;
 
@@ -1680,12 +1688,12 @@ function createMemoryModal(
   [prevButton, nextButton].forEach(button => {
     button.addEventListener('mouseenter', () => {
       if (!button.disabled) {
-        button.style.backgroundColor = '#323232';
+        button.style.backgroundColor = 'var(--om-hover, #323232)';
       }
     });
     button.addEventListener('mouseleave', () => {
       if (!button.disabled) {
-        button.style.backgroundColor = '#27272A';
+        button.style.backgroundColor = 'var(--om-card, #27272A)';
       }
     });
   });
@@ -2196,9 +2204,9 @@ async function handleMem0Modal(
       );
     });
 
-    const baseUrl = data.baseUrl || 'https://api.mem0.ai';
+    const baseUrl = data.baseUrl || OSS_API_BASE_DEFAULT;
     const apiKey = data.apiKey;
-    const userId = data.userId || data.user_id || 'chrome-extension-user';
+    const userId = data.userId || data.user_id || '';
     const accessToken = data.access_token;
 
     if (!apiKey && !accessToken) {
@@ -2292,9 +2300,12 @@ async function handleMem0Modal(
 
     // New add memory API call (non-blocking)
     const reqHeaders: Record<string, string> = { 'Content-Type': 'application/json' };
-    if (accessToken) reqHeaders['Authorization'] = `Bearer ${accessToken}`;
-    else if (apiKey) reqHeaders['X-API-Key'] = apiKey;
-    fetch(`${baseUrl}/memories`, {
+    if (accessToken) {
+      reqHeaders['Authorization'] = `Bearer ${accessToken}`;
+    } else if (apiKey) {
+      reqHeaders['X-API-Key'] = apiKey;
+    }
+    memoryFetch(`${baseUrl}/memories`, {
       method: 'POST',
       headers: reqHeaders,
       body: JSON.stringify({
@@ -2397,7 +2408,9 @@ function hookClaudeBackgroundSearchTyping() {
       try {
         const MEM0_PLAIN = OPENMEMORY_PROMPTS.memory_header_plain_regex;
         text = text.replace(MEM0_PLAIN, '').trim();
-      } catch {}
+      } catch {
+        /* Leave the original prompt if header cleanup is unavailable. */
+      }
       console.log('Claude background search triggered:', text);
       claudeSearch.setText(text);
     };
@@ -2555,7 +2568,7 @@ function initializeMem0Integration(): void {
         :host { position: relative; }
         .mem0-btn { all: initial; cursor: pointer; display:inline-flex; align-items:center; justify-content:center; width:32px; height:32px; border-radius:50%; }
         .mem0-btn img { width:18px; height:18px; border-radius:50%; }
-        .dot { position:absolute; top:-2px; right:-2px; width:8px; height:8px; background:#80DDA2; border-radius:50%; border:2px solid #1C1C1E; display:none; }
+        .dot { position:absolute; top:-2px; right:-2px; width:8px; height:8px; background:#80DDA2; border-radius:50%; border:2px solid var(--om-bg, #1C1C1E); display:none; }
         :host([data-has-text="1"]) .dot { display:block; }
       `;
     let btn = document.createElement('button');
@@ -2849,6 +2862,7 @@ function showLoginPopup() {
 
   // Create popup container
   const popupOverlay = document.createElement('div');
+  bindTheme(popupOverlay);
   popupOverlay.id = 'mem0-login-popup';
   popupOverlay.style.cssText = `
     position: fixed;
@@ -2865,11 +2879,11 @@ function showLoginPopup() {
 
   const popupContainer = document.createElement('div');
   popupContainer.style.cssText = `
-    background-color: #1C1C1E;
+    background-color: var(--om-bg, #1C1C1E);
     border-radius: 12px;
     width: 320px;
     padding: 24px;
-    color: white;
+    color: var(--om-text, white);
     box-shadow: 0 4px 20px rgba(0, 0, 0, 0.5);
     font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
   `;
@@ -2882,8 +2896,8 @@ function showLoginPopup() {
     right: 16px;
     background: none;
     border: none;
-    color: #A1A1AA;
-    font-size: 16px;
+    color: var(--om-muted, #A1A1AA);
+    font-size: 14px;
     cursor: pointer;
   `;
   closeButton.innerHTML = '&times;';
@@ -2922,7 +2936,7 @@ function showLoginPopup() {
   heading.textContent = 'Sign in to OpenMemory';
   heading.style.cssText = `
     margin: 0;
-    font-size: 18px;
+    font-size: 16px;
     font-weight: 600;
   `;
 
@@ -2934,8 +2948,8 @@ function showLoginPopup() {
     'Please sign in to access your memories and personalize your conversations!';
   message.style.cssText = `
     margin-bottom: 24px;
-    color: #D4D4D8;
-    font-size: 14px;
+    color: var(--om-text, #D4D4D8);
+    font-size: 12px;
     line-height: 1.5;
     text-align: center;
   `;
@@ -2948,11 +2962,11 @@ function showLoginPopup() {
     justify-content: center;
     width: 100%;
     padding: 10px;
-    background-color: white;
-    color: black;
+    background-color: var(--om-action, white);
+    color: var(--om-on-action, black);
     border: none;
     border-radius: 8px;
-    font-size: 14px;
+    font-size: 12px;
     font-weight: 600;
     cursor: pointer;
     transition: background-color 0.2s;
@@ -2966,11 +2980,11 @@ function showLoginPopup() {
   signInButton.appendChild(signInText);
 
   signInButton.addEventListener('mouseenter', () => {
-    signInButton.style.backgroundColor = '#f5f5f5';
+    signInButton.style.backgroundColor = 'var(--om-action, #f5f5f5)';
   });
 
   signInButton.addEventListener('mouseleave', () => {
-    signInButton.style.backgroundColor = 'white';
+    signInButton.style.backgroundColor = 'var(--om-action, white)';
   });
 
   // Open sign-in page when clicked
@@ -3096,8 +3110,8 @@ async function captureAndStoreMemory(snapshot: string) {
           return;
         }
 
-        const baseUrl = items.baseUrl || 'https://api.mem0.ai';
-        const userId = items.userId || items.user_id || 'chrome-extension-user';
+        const baseUrl = items.baseUrl || OSS_API_BASE_DEFAULT;
+        const userId = items.userId || items.user_id || '';
 
         // Get recent messages for context using sliding window
         const contextMessages = getConversationContext(false); // Don't include current message yet
@@ -3113,7 +3127,7 @@ async function captureAndStoreMemory(snapshot: string) {
         }
 
         // Send memory to mem0 API asynchronously without waiting for response
-        fetch(`${baseUrl}/memories`, {
+        memoryFetch(`${baseUrl}/memories`, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',

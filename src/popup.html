@@ -11,28 +11,28 @@
           'Open Sans', 'Helvetica Neue', sans-serif;
         width: 300px;
         margin: 0;
-        padding: 20px;
-        background-color: #1c1c1e;
-        color: white;
+        padding: 14px;
+        background-color: var(--om-bg, #1c1c1e);
+        color: var(--om-text, white);
       }
       .logo-container {
         display: flex;
         align-items: center;
-        justify-content: center;
-        margin-bottom: 16px;
+        justify-content: space-between;
+        margin-bottom: 12px;
       }
       .heading {
         margin: 0;
-        font-size: 18px;
+        font-size: 16px;
         font-weight: 600;
       }
       .content {
         text-align: center;
       }
       .message {
-        margin-bottom: 16px;
-        color: #d4d4d8;
-        font-size: 14px;
+        margin-bottom: 12px;
+        color: var(--om-text, #d4d4d8);
+        font-size: 12px;
         line-height: 1.5;
       }
       .input-group {
@@ -42,53 +42,54 @@
       .input-group label {
         display: block;
         font-size: 12px;
-        color: #a1a1aa;
+        color: var(--om-muted, #a1a1aa);
         margin-bottom: 6px;
       }
       .input-group input {
         width: 100%;
-        padding: 10px 12px;
-        background: #27272a;
-        border: 1px solid #3b3b3f;
+        padding: 8px 10px;
+        background: var(--om-card, #27272a);
+        border: 1px solid var(--om-button, #3b3b3f);
         border-radius: 8px;
-        color: white;
-        font-size: 13px;
+        color: var(--om-text, white);
+        font-size: 12px;
         box-sizing: border-box;
         outline: none;
       }
       .primary-btn {
+        color: var(--om-on-action) !important;
         width: 100%;
-        padding: 10px;
-        background: #7a5bf7;
-        color: white;
+        padding: 8px;
+        background: var(--om-action, #7a5bf7);
+        color: var(--om-text, white);
         border: none;
         border-radius: 8px;
-        font-size: 13px;
+        font-size: 12px;
         font-weight: 600;
         cursor: pointer;
         margin-top: 12px;
       }
       .primary-btn:hover {
-        background: #6b4ce6;
+        background: var(--om-action, #6b4ce6);
       }
       .secondary-btn {
         width: 100%;
-        padding: 10px;
-        background: #3b3b3f;
-        color: white;
+        padding: 8px;
+        background: var(--om-button, #3b3b3f);
+        color: var(--om-text, white);
         border: none;
         border-radius: 8px;
-        font-size: 13px;
+        font-size: 12px;
         cursor: pointer;
         margin-top: 8px;
       }
       .secondary-btn:hover {
-        background: #4b4b4f;
+        background: var(--om-hover, #4b4b4f);
       }
       .link-btn {
         background: none;
         border: none;
-        color: #a78bfa;
+        color: var(--om-text, #a78bfa);
         font-size: 12px;
         cursor: pointer;
         margin-top: 12px;
@@ -100,22 +101,22 @@
         min-height: 1.2em;
       }
       #statusMessage.error {
-        color: #f87171;
+        color: var(--om-error, #f87171);
       }
       #statusMessage.success {
-        color: #4ade80;
+        color: var(--om-success, #4ade80);
       }
       .hidden {
         display: none !important;
       }
       .connected-badge {
-        color: #4ade80;
-        font-size: 13px;
+        color: var(--om-success, #4ade80);
+        font-size: 12px;
         margin-bottom: 8px;
       }
       .server-hint {
         font-size: 11px;
-        color: #71717a;
+        color: var(--om-muted, #71717a);
         word-break: break-all;
         margin-bottom: 12px;
       }
@@ -124,10 +125,21 @@
   <body>
     <div class="logo-container">
       <h2 class="heading">OpenMemory</h2>
+      <div id="themeSwitch"></div>
     </div>
 
     <div id="setupView" class="content">
       <p class="message">Connect to your self-hosted mem0 instance.</p>
+      <div class="input-group">
+        <label for="popupUserIdInput">User ID (required)</label>
+        <input
+          type="text"
+          id="popupUserIdInput"
+          placeholder="Enter your user ID"
+          autocomplete="off"
+          required
+        />
+      </div>
       <div class="input-group">
         <label for="popupApiKeyInput">API key</label>
         <input type="password" id="popupApiKeyInput" placeholder="m0sk_…" autocomplete="off" />
@@ -150,9 +162,9 @@
       <p id="connectedServerHint" class="server-hint"></p>
       <p class="message">Open a supported chat site, then use the sidebar or open it from here.</p>
       <button type="button" id="openSidebarBtn" class="primary-btn">Open memory sidebar</button>
-      <button type="button" id="openChatBtn" class="secondary-btn">Open ChatGPT</button>
+      <p id="sidebarStatus" class="message" role="status"></p>
       <button type="button" id="openDashboardBtn" class="secondary-btn">Open mem0 dashboard</button>
-      <button type="button" id="editSettingsBtn" class="link-btn">Edit API key / server</button>
+      <button type="button" id="editSettingsBtn" class="link-btn">Edit connection settings</button>
     </div>
 
     <script type="module" src="./popup.ts"></script>

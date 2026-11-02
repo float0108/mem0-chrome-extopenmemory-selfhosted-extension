@@ -1,5 +1,6 @@
 /** Enum for all storage keys used in the extension */
 export enum StorageKey {
+  SETUP_COMPLETE = 'setup_complete',
   API_KEY = 'apiKey',
   ACCESS_TOKEN = 'access_token',
   USER_ID = 'user_id',

@@ -1,6 +1,7 @@
-import { DEFAULT_USER_ID, OSS_API_BASE_DEFAULT } from './types/api';
+import './utils/memory_relay';
 import { initContextMenuMemory } from './context-menu-memory';
 import { initDirectUrlTracking } from './direct-url-tracker';
+import { DEFAULT_USER_ID, OSS_API_BASE_DEFAULT } from './types/api';
 import { type OpenDashboardMessage, SidebarAction } from './types/messages';
 import { StorageKey } from './types/storage';
 
@@ -8,14 +9,17 @@ const DEFAULT_SYNC = {
   [StorageKey.API_BASE_URL]: OSS_API_BASE_DEFAULT,
   [StorageKey.USER_ID]: DEFAULT_USER_ID,
   [StorageKey.USER_ID_CAMEL]: DEFAULT_USER_ID,
-  [StorageKey.MEMORY_ENABLED]: true,
+  [StorageKey.MEMORY_ENABLED]: false,
+  [StorageKey.SETUP_COMPLETE]: false,
 };
 
 chrome.runtime.onInstalled.addListener(() => {
-  chrome.storage.sync.get([StorageKey.API_BASE_URL], existing => {
+  chrome.storage.sync.get(Object.keys(DEFAULT_SYNC), existing => {
     const patch: Record<string, unknown> = { ...DEFAULT_SYNC };
-    if (existing[StorageKey.API_BASE_URL]) {
-      delete patch[StorageKey.API_BASE_URL];
+    for (const key of Object.keys(DEFAULT_SYNC)) {
+      if (existing[key] !== undefined) {
+        delete patch[key];
+      }
     }
     chrome.storage.sync.set(patch, () => {
       console.log('OpenMemory defaults applied');

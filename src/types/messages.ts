@@ -14,6 +14,7 @@ export enum MessageType {
 /** Enum for sidebar actions (TOGGLE_SIDEBAR, OPEN_POPUP, etc.) */
 export enum SidebarAction {
   TOGGLE_SIDEBAR = 'toggleSidebar',
+  OPEN_SIDEBAR = 'openMemorySidebar',
   OPEN_POPUP = 'openPopup',
   TOGGLE_MEM0 = 'toggleMem0',
   OPEN_DASHBOARD = 'openDashboard',
@@ -75,7 +76,4 @@ export type OpenDashboardMessage = {
 };
 
 export type SidebarActionMessage =
-  | ToggleSidebarMessage
-  | OpenPopupMessage
-  | ToggleMem0Message
-  | OpenDashboardMessage;
+  ToggleSidebarMessage | OpenPopupMessage | ToggleMem0Message | OpenDashboardMessage;

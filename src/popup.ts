@@ -1,17 +1,22 @@
-import { DEFAULT_USER_ID, OSS_API_BASE_DEFAULT } from './types/api';
+import { OSS_API_BASE_DEFAULT } from './types/api';
 import { SidebarAction } from './types/messages';
 import { StorageKey } from './types/storage';
+import { normalizeApiUrl, requireJson } from './utils/api_url';
+import { CONFIGURATION_KEYS, isConfigured } from './utils/configuration';
 import { storageSyncGet, storageSyncSet } from './utils/extension_storage';
+import { bindTheme, createThemeSwitch } from './utils/theme';
 
-const CHATGPT_URL = 'https://chatgpt.com/';
 const DASHBOARD_DEFAULT = 'http://127.0.0.1:3000';
 
-async function verifyApiKey(serverUrl: string, apiKey: string): Promise<void> {
-  const url = `${serverUrl.replace(/\/$/, '')}/memories?user_id=${encodeURIComponent(DEFAULT_USER_ID)}&top_k=1`;
+async function verifyApiKey(serverUrl: string, apiKey: string, userId: string): Promise<void> {
+  const url = `${serverUrl.replace(/\/$/, '')}/memories?user_id=${encodeURIComponent(userId)}&top_k=1`;
   const res = await fetch(url, {
     method: 'GET',
     headers: { 'X-API-Key': apiKey },
+    signal: AbortSignal.timeout(15000),
+    redirect: 'error',
   });
+  requireJson(res.headers.get('content-type'));
   if (!res.ok) {
     let detail = `HTTP ${res.status}`;
     try {
@@ -64,23 +69,26 @@ function tryOpenSidebarOnActiveTab(): Promise<boolean> {
         return;
       }
       chrome.tabs
-        .sendMessage(tabId, { action: SidebarAction.TOGGLE_SIDEBAR })
-        .then(() => resolve(true))
+        .sendMessage(tabId, { action: SidebarAction.OPEN_SIDEBAR })
+        .then(response => resolve(response?.ok === true))
         .catch(() => resolve(false));
     });
   });
 }
 
 document.addEventListener('DOMContentLoaded', () => {
+  bindTheme(document.body);
+  document.getElementById('themeSwitch')?.appendChild(createThemeSwitch());
   const setupView = document.getElementById('setupView') as HTMLElement;
   const connectedView = document.getElementById('connectedView') as HTMLElement;
   const saveApiKeyBtn = document.getElementById('saveApiKeyBtn') as HTMLButtonElement;
   const apiKeyInput = document.getElementById('popupApiKeyInput') as HTMLInputElement;
+  const userIdInput = document.getElementById('popupUserIdInput') as HTMLInputElement;
   const serverUrlInput = document.getElementById('popupServerUrlInput') as HTMLInputElement;
   const statusMessage = document.getElementById('statusMessage') as HTMLElement;
   const connectedServerHint = document.getElementById('connectedServerHint') as HTMLElement;
   const openSidebarBtn = document.getElementById('openSidebarBtn') as HTMLButtonElement;
-  const openChatBtn = document.getElementById('openChatBtn') as HTMLButtonElement;
+  const sidebarStatus = document.getElementById('sidebarStatus') as HTMLElement;
   const openDashboardBtn = document.getElementById('openDashboardBtn') as HTMLButtonElement;
   const editSettingsBtn = document.getElementById('editSettingsBtn') as HTMLButtonElement;
 
@@ -97,19 +105,19 @@ document.addEventListener('DOMContentLoaded', () => {
 
   void (async () => {
     try {
-      const data = await storageGet([
-        StorageKey.API_KEY,
-        StorageKey.API_BASE_URL,
-        StorageKey.USER_ID,
-      ]);
+      const data = await storageGet(CONFIGURATION_KEYS);
       const serverUrl =
         typeof data[StorageKey.API_BASE_URL] === 'string'
           ? (data[StorageKey.API_BASE_URL] as string)
           : OSS_API_BASE_DEFAULT;
       serverUrlInput.value = serverUrl;
+      userIdInput.value =
+        data[StorageKey.SETUP_COMPLETE] === true ? String(data[StorageKey.USER_ID] || '') : '';
       if (typeof data[StorageKey.API_KEY] === 'string' && data[StorageKey.API_KEY]) {
         apiKeyInput.value = data[StorageKey.API_KEY] as string;
-        goConnected(serverUrl);
+        if (isConfigured(data)) {
+          goConnected(serverUrl);
+        }
       }
     } catch {
       serverUrlInput.value = OSS_API_BASE_DEFAULT;
@@ -119,7 +127,14 @@ document.addEventListener('DOMContentLoaded', () => {
   saveApiKeyBtn.addEventListener('click', () => {
     void (async () => {
       const apiKey = apiKeyInput.value.trim();
-      const serverUrl = serverUrlInput.value.trim() || OSS_API_BASE_DEFAULT;
+      const userId = userIdInput.value.trim();
+      let serverUrl = serverUrlInput.value.trim();
+
+      if (!serverUrl || !userId) {
+        setStatus(statusMessage, 'Server URL and user ID are required.', 'error');
+        (!serverUrl ? serverUrlInput : userIdInput).focus();
+        return;
+      }
 
       if (!apiKey) {
         if (statusMessage) {
@@ -135,13 +150,15 @@ document.addEventListener('DOMContentLoaded', () => {
       }
 
       try {
-        await verifyApiKey(serverUrl, apiKey);
+        serverUrl = normalizeApiUrl(serverUrl);
+        await verifyApiKey(serverUrl, apiKey, userId);
         await storageSet({
           [StorageKey.API_KEY]: apiKey,
           [StorageKey.API_BASE_URL]: serverUrl,
-          [StorageKey.USER_ID]: DEFAULT_USER_ID,
-          [StorageKey.USER_ID_CAMEL]: DEFAULT_USER_ID,
+          [StorageKey.USER_ID]: userId,
+          [StorageKey.USER_ID_CAMEL]: userId,
           [StorageKey.MEMORY_ENABLED]: true,
+          [StorageKey.SETUP_COMPLETE]: true,
         });
         goConnected(serverUrl);
         if (statusMessage) {
@@ -164,27 +181,20 @@ document.addEventListener('DOMContentLoaded', () => {
 
   openSidebarBtn?.addEventListener('click', () => {
     void (async () => {
+      sidebarStatus.textContent = '';
       const opened = await tryOpenSidebarOnActiveTab();
       if (opened) {
         window.close();
         return;
       }
-      chrome.tabs.create({ url: CHATGPT_URL }, () => {
-        window.close();
-      });
+      sidebarStatus.textContent =
+        '无法在当前页面打开侧栏。请刷新网页后重试；浏览器设置页、新标签页等页面不支持扩展侧栏。';
     })();
-  });
-
-  openChatBtn?.addEventListener('click', () => {
-    chrome.tabs.create({ url: CHATGPT_URL }, () => {
-      window.close();
-    });
   });
 
   openDashboardBtn?.addEventListener('click', () => {
     const dash =
-      lastServerUrl.replace(/:8888\/?$/, ':3000') ||
-      DASHBOARD_DEFAULT;
+      lastServerUrl.replace(/\/backend\/?$/, '').replace(/:8888\/?$/, ':3000') || DASHBOARD_DEFAULT;
     chrome.tabs.create({ url: dash });
   });
 

@@ -2,8 +2,12 @@ import { DEFAULT_USER_ID, OSS_API_BASE_DEFAULT } from './types/api';
 import type { MemoriesResponse, Memory } from './types/memory';
 import { SidebarAction, type SidebarActionMessage } from './types/messages';
 import { StorageKey } from './types/storage';
-import { buildAuthHeaders, buildDashboardUrl, sendExtensionEvent } from './utils/util_functions';
+import { normalizeApiUrl } from './utils/api_url';
+import { CONFIGURATION_KEYS, isConfigured } from './utils/configuration';
 import { hasExtensionContext, storageSyncGet, storageSyncRemove } from './utils/extension_storage';
+import { memoryFetch } from './utils/memory_fetch';
+import { bindTheme, createThemeSwitch } from './utils/theme';
+import { buildAuthHeaders, buildDashboardUrl, sendExtensionEvent } from './utils/util_functions';
 
 (function () {
   if (!hasExtensionContext()) {
@@ -15,10 +19,31 @@ import { hasExtensionContext, storageSyncGet, storageSyncRemove } from './utils/
   function initializeMem0Sidebar(): void {
     // Listen for messages from the extension
     chrome.runtime.onMessage.addListener(
-      (request: SidebarActionMessage | { action: SidebarAction.SIDEBAR_SETTINGS }) => {
+      (
+        request:
+          | SidebarActionMessage
+          | { action: SidebarAction.SIDEBAR_SETTINGS | SidebarAction.OPEN_SIDEBAR },
+        _sender,
+        sendResponse
+      ) => {
+        if (request.action === SidebarAction.OPEN_SIDEBAR) {
+          void storageSyncGet(CONFIGURATION_KEYS)
+            .then(data => {
+              if (!isConfigured(data)) {
+                sendResponse({ ok: false });
+                return;
+              }
+              if (!sidebarVisible) {
+                toggleSidebar();
+              }
+              sendResponse({ ok: true });
+            })
+            .catch(() => sendResponse({ ok: false }));
+          return true;
+        }
         if (request.action === SidebarAction.TOGGLE_SIDEBAR) {
-          void storageSyncGet([StorageKey.API_KEY, StorageKey.ACCESS_TOKEN]).then(data => {
-            if (data[StorageKey.API_KEY] || data[StorageKey.ACCESS_TOKEN]) {
+          void storageSyncGet(CONFIGURATION_KEYS).then(data => {
+            if (isConfigured(data)) {
               toggleSidebar();
             } else {
               chrome.runtime.sendMessage({ action: SidebarAction.OPEN_POPUP });
@@ -26,8 +51,8 @@ import { hasExtensionContext, storageSyncGet, storageSyncRemove } from './utils/
           });
         }
         if (request.action === SidebarAction.SIDEBAR_SETTINGS) {
-          void storageSyncGet([StorageKey.API_KEY, StorageKey.ACCESS_TOKEN]).then(data => {
-            if (data[StorageKey.API_KEY] || data[StorageKey.ACCESS_TOKEN]) {
+          void storageSyncGet(CONFIGURATION_KEYS).then(data => {
+            if (isConfigured(data)) {
               toggleSidebar();
 
               setTimeout(() => {
@@ -89,6 +114,7 @@ import { hasExtensionContext, storageSyncGet, storageSyncRemove } from './utils/
 
     const sidebarContainer = document.createElement('div');
     sidebarContainer.id = 'mem0-sidebar';
+    bindTheme(sidebarContainer);
 
     // Create fixed header
     const fixedHeader = document.createElement('div');
@@ -109,6 +135,8 @@ import { hasExtensionContext, storageSyncGet, storageSyncRemove } from './utils/
           </div>
         </div>
       `;
+
+    fixedHeader.querySelector('.header-buttons')?.prepend(createThemeSwitch());
 
     // Create a container for search inputs
     const inputContainer = document.createElement('div');
@@ -212,8 +240,8 @@ import { hasExtensionContext, storageSyncGet, storageSyncRemove } from './utils/
       <div class="section-header">
         <h2 class="section-title">Server URL</h2>
       </div>
-      <input type="text" id="serverUrlInput" class="settings-input" placeholder="http://127.0.0.1:8888" value="http://127.0.0.1:8888">
-      <p class="section-description">Your self-hosted mem0 API base URL (default: http://127.0.0.1:8888)</p>
+      <input type="text" id="serverUrlInput" class="settings-input" placeholder="${OSS_API_BASE_DEFAULT}" value="${OSS_API_BASE_DEFAULT}">
+      <p class="section-description">Your self-hosted mem0 API base URL, including any path prefix</p>
     `;
     settingsTabContent.appendChild(serverUrlSection);
 
@@ -237,7 +265,7 @@ import { hasExtensionContext, storageSyncGet, storageSyncRemove } from './utils/
         <h2 class="section-title">API Key</h2>
       </div>
       <input type="password" id="apiKeyInput" class="settings-input" placeholder="Enter your API key">
-      <p class="section-description">Required for self-hosted instances. Leave empty to use cloud OAuth.</p>
+      <p class="section-description">Required for self-hosted instances. Enter the key issued by your server.</p>
     `;
     settingsTabContent.appendChild(apiKeySection);
 
@@ -255,7 +283,7 @@ import { hasExtensionContext, storageSyncGet, storageSyncRemove } from './utils/
           </svg>
         </button>
       </div>
-      <input type="text" id="userIdInput" class="settings-input" placeholder="Enter your user ID" value="seth">
+      <input type="text" id="userIdInput" class="settings-input" placeholder="Enter your user ID" value="${DEFAULT_USER_ID}">
     `;
     settingsTabContent.appendChild(userIdSection);
 
@@ -519,7 +547,9 @@ import { hasExtensionContext, storageSyncGet, storageSyncRemove } from './utils/
     ) as HTMLInputElement;
     const debugCheckbox = debugSection.querySelector('#openMemoryDebugToggle') as HTMLInputElement;
     const serverUrlInput = serverUrlSection.querySelector('#serverUrlInput') as HTMLInputElement;
-    const dashboardUrlInput = dashboardUrlSection.querySelector('#dashboardUrlInput') as HTMLInputElement;
+    const dashboardUrlInput = dashboardUrlSection.querySelector(
+      '#dashboardUrlInput'
+    ) as HTMLInputElement;
     const apiKeyInput = apiKeySection.querySelector('#apiKeyInput') as HTMLInputElement;
 
     const userId = (userIdInput?.value || DEFAULT_USER_ID).trim();
@@ -527,12 +557,27 @@ import { hasExtensionContext, storageSyncGet, storageSyncRemove } from './utils/
     const autoInjectEnabled = Boolean(autoInjectCheckbox?.checked);
     const similarityThreshold = parseFloat(thresholdSlider?.value || '0.3');
     const topK = parseInt(topKInput?.value || '10', 10);
-    const baseUrl = (serverUrlInput?.value || '').trim() || OSS_API_BASE_DEFAULT;
+    let baseUrl: string;
+    try {
+      if (!userId || !apiKeyInput.value.trim() || !serverUrlInput.value.trim()) {
+        throw new Error('Server URL, user ID and API key are required.');
+      }
+      baseUrl = normalizeApiUrl(serverUrlInput.value.trim());
+    } catch (error) {
+      saveBtn.disabled = false;
+      saveText.style.display = 'inline';
+      saveLoader.style.display = 'none';
+      saveMessage.style.display = 'block';
+      saveMessage.className = 'save-message error';
+      saveMessage.textContent = error instanceof Error ? error.message : 'Invalid server URL';
+      return;
+    }
     const dashboardUrl = (dashboardUrlInput?.value || '').trim() || undefined;
     const apiKey = (apiKeyInput?.value || '').trim() || undefined;
 
     const storageData: Record<string, unknown> = {
       [StorageKey.USER_ID]: userId,
+      [StorageKey.USER_ID_CAMEL]: userId,
       [StorageKey.API_BASE_URL]: baseUrl,
       memory_enabled: memoryEnabled,
       auto_inject_enabled: autoInjectEnabled,
@@ -698,7 +743,8 @@ import { hasExtensionContext, storageSyncGet, storageSyncRemove } from './utils/
       StorageKey.SELECTED_ORG,
       StorageKey.SELECTED_PROJECT,
       StorageKey.API_BASE_URL,
-    ]).then(data => {
+    ])
+      .then(data => {
         const apiKey = data[StorageKey.API_KEY] as string | undefined;
         const accessToken = data[StorageKey.ACCESS_TOKEN] as string | undefined;
         if (apiKey || accessToken) {
@@ -720,7 +766,7 @@ import { hasExtensionContext, storageSyncGet, storageSyncRemove } from './utils/
             params.append('project_id', selectedProject);
           }
 
-          fetch(`${baseUrl}/memories?${params.toString()}`, {
+          memoryFetch(`${baseUrl}/memories?${params.toString()}`, {
             method: 'GET',
             headers: headers,
           })
@@ -734,7 +780,9 @@ import { hasExtensionContext, storageSyncGet, storageSyncRemove } from './utils/
               const results = body.results || [];
               const total = results.length;
               const countLabel =
-                total >= 1000 ? '1,000+ Memories' : `${new Intl.NumberFormat().format(total)} Memories`;
+                total >= 1000
+                  ? '1,000+ Memories'
+                  : `${new Intl.NumberFormat().format(total)} Memories`;
               updateMemoryCount(countLabel);
               displayMemories(results);
             })
@@ -749,11 +797,12 @@ import { hasExtensionContext, storageSyncGet, storageSyncRemove } from './utils/
           updateMemoryCount('API key required');
           displayErrorMessage('Add your API key in the extension popup');
         }
-    }).catch(err => {
-      console.error('Error reading extension storage:', err);
-      updateMemoryCount('Setup required');
-      displayErrorMessage('Open the extension popup and save your API key');
-    });
+      })
+      .catch(err => {
+        console.error('Error reading extension storage:', err);
+        updateMemoryCount('Setup required');
+        displayErrorMessage('Open the extension popup and save your API key');
+      });
   }
 
   function updateMemoryCount(count: number | string): void {
@@ -793,27 +842,29 @@ import { hasExtensionContext, storageSyncGet, storageSyncRemove } from './utils/
     // Add this line to maintain the width of the sidebar
     const sb = document.getElementById('mem0-sidebar') as HTMLElement;
     if (sb) {
-      sb.style.width = '400px';
+      sb.style.width = 'min(360px, calc(100vw - 16px))';
     }
   }
 
   function addStyles() {
     const style = document.createElement('style');
     style.textContent = `
+        #mem0-sidebar, #mem0-sidebar * { box-sizing: border-box; }
+        #mem0-sidebar h2, #mem0-sidebar h3, #mem0-sidebar p { margin: 0; }
         
-        :root {
-          --bg-dark: #18181b;
-          --bg-card: #27272a;
-          --bg-button: #3b3b3f;
-          --bg-button-hover: #4b4b4f;
-          --text-white: #ffffff;
-          --text-gray: #a1a1aa;
-          --purple: #7a5bf7;
-          --border-color: #27272a;
-          --tag-bg: #3b3b3f;
-          --scrollbar-bg: #18181b;
-          --scrollbar-thumb: #3b3b3f;
-          --success-color: #22c55e;
+        #mem0-sidebar {
+          --bg-dark: var(--om-bg, #18181b);
+          --bg-card: var(--om-card, #27272a);
+          --bg-button: var(--om-button, #3b3b3f);
+          --bg-button-hover: var(--om-hover, #4b4b4f);
+          --text-white: var(--om-text, #ffffff);
+          --text-gray: var(--om-muted, #a1a1aa);
+          --purple: var(--om-action);
+          --border-color: var(--om-border);
+          --tag-bg: var(--om-button, #3b3b3f);
+          --scrollbar-bg: var(--om-bg, #18181b);
+          --scrollbar-thumb: var(--om-button, #3b3b3f);
+          --success-color: var(--om-success, #22c55e);
         }
         
         #mem0-sidebar {
@@ -821,7 +872,7 @@ import { hasExtensionContext, storageSyncGet, storageSyncRemove } from './utils/
           position: fixed; 
           top: 60px;
           right: 50px;
-          width: 400px;
+          width: min(360px, calc(100vw - 16px));
           height: auto;
           max-height: 85vh;
           background: var(--bg-dark);
@@ -838,31 +889,31 @@ import { hasExtensionContext, storageSyncGet, storageSyncRemove } from './utils/
           box-shadow: 0px 4px 20px rgba(0, 0, 0, 0.5);
         }
         
-        .fixed-header {
+        #mem0-sidebar .fixed-header {
           box-sizing: border-box;
           width: 100%;
           background: var(--bg-dark);
           border-bottom: 1px solid var(--border-color);
         }
         
-        .tabs-container {
+        #mem0-sidebar .tabs-container {
           padding: 0 16px;
           background: var(--bg-dark);
           border-bottom: 1px solid var(--border-color);
         }
         
-        .tabs {
+        #mem0-sidebar .tabs {
           display: flex;
           gap: 0;
         }
         
-        .tab-button {
+        #mem0-sidebar .tab-button {
           flex: 1;
-          padding: 12px 16px;
+          padding: 9px 12px;
           background: none;
           border: none;
           color: var(--text-gray);
-          font-size: 14px;
+          font-size: 12px;
           font-weight: 500;
           cursor: pointer;
           transition: color 0.2s ease;
@@ -870,36 +921,36 @@ import { hasExtensionContext, storageSyncGet, storageSyncRemove } from './utils/
           border-bottom: 2px solid transparent;
         }
         
-        .tab-button.active {
+        #mem0-sidebar .tab-button.active {
           color: var(--text-white);
           border-bottom-color: var(--purple);
         }
         
-        .tab-button:hover {
+        #mem0-sidebar .tab-button:hover {
           color: var(--text-white);
         }
         
-        .tab-content {
+        #mem0-sidebar .tab-content {
           display: none;
           flex-direction: column;
-          gap: 24px;
+          gap: 16px;
         }
         
-        .tab-content.active {
+        #mem0-sidebar .tab-content.active {
           display: flex;
         }
         
-        .header {
+        #mem0-sidebar .header {
           display: flex;
           flex-direction: row;
           justify-content: space-between;
           align-items: center;
-          padding: 16px;
+          padding: 12px;
           width: 100%;
-          height: 62px;
+          height: 52px;
         }
         
-        .logo-container {
+        #mem0-sidebar .logo-container {
           display: flex;
           flex-direction: row;
           align-items: center;
@@ -908,32 +959,32 @@ import { hasExtensionContext, storageSyncGet, storageSyncRemove } from './utils/
           height: 24px;
         }
         
-        .openmemory-icon {
+        #mem0-sidebar .openmemory-icon {
           width: 24px;
           height: 24px;
         }
         
-        .openmemory-logo {
+        #mem0-sidebar .openmemory-logo {
           height: 24px;
           font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
           font-style: normal;
           font-weight: 600;
-          font-size: 20px;
+          font-size: 16px;
           line-height: 24px;
           letter-spacing: -0.03em;
           color: var(--text-white);
         }
         
-        .header-buttons {
+        #mem0-sidebar .header-buttons {
           display: flex;
           flex-direction: row;
           align-items: center;
           padding: 0px;
-          gap: 16px;
+          gap: 8px;
           height: 30px;
         }
         
-        .close-button {
+        #mem0-sidebar .close-button {
           background: none;
           border: none;
           width: 24px;
@@ -943,20 +994,20 @@ import { hasExtensionContext, storageSyncGet, storageSyncRemove } from './utils/
           align-items: center;
           justify-content: center;
           color: var(--text-gray);
-          font-size: 20px;
+          font-size: 16px;
           transition: color 0.2s ease;
         }
         
-        .close-button:hover {
+        #mem0-sidebar .close-button:hover {
           color: var(--text-white);
         }
         
         /* Custom scrollbar styles */
-        .content {
-          padding: 16px;
+        #mem0-sidebar .content {
+          padding: 12px;
           display: flex;
           flex-direction: column;
-          gap: 24px;
+          gap: 16px;
           overflow-y: auto;
           max-height: calc(85vh - 62px - 49px - 60px); /* Subtract header, tab bar, and footer heights */
           
@@ -966,54 +1017,54 @@ import { hasExtensionContext, storageSyncGet, storageSyncRemove } from './utils/
         }
         
         /* WebKit browsers (Chrome, Safari, Edge) */
-        .content::-webkit-scrollbar {
+        #mem0-sidebar .content::-webkit-scrollbar {
           width: 4px;
         }
         
-        .content::-webkit-scrollbar-track {
+        #mem0-sidebar .content::-webkit-scrollbar-track {
           background: var(--scrollbar-bg);
         }
         
-        .content::-webkit-scrollbar-thumb {
+        #mem0-sidebar .content::-webkit-scrollbar-thumb {
           background-color: var(--scrollbar-thumb);
           border-radius: 4px;
           border: none;
         }
         
-        .total-memories {
+        #mem0-sidebar .total-memories {
           background-color: var(--bg-card);
           border-radius: 8px;
-          padding: 16px;
+          padding: 12px;
         }
         
-        .total-memories-content {
+        #mem0-sidebar .total-memories-content {
           display: flex;
           justify-content: space-between;
           align-items: center;
         }
         
-        .total-memories-label {
+        #mem0-sidebar .total-memories-label {
           color: var(--text-gray);
-          font-size: 14px;
+          font-size: 12px;
           margin-bottom: 4px;
         }
         
-        .memory-count {
+        #mem0-sidebar .memory-count {
           font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
           font-style: normal;
           font-weight: 500;
-          font-size: 18px;
+          font-size: 15px;
           line-height: 140%;
           letter-spacing: -0.03em;
           color: var(--text-white);
         }
         
-        .memory-count.loading {
+        #mem0-sidebar .memory-count.loading {
           color: var(--text-gray);
-          font-size: 16px;
+          font-size: 14px;
         }
         
-        .dashboard-button {
+        #mem0-sidebar .dashboard-button {
           display: flex;
           flex-direction: row;
           align-items: center;
@@ -1026,61 +1077,61 @@ import { hasExtensionContext, storageSyncGet, storageSyncRemove } from './utils/
           cursor: pointer;
           transition: all 0.2s ease;
           color: var(--text-white);
-          font-size: 14px;
+          font-size: 12px;
         }
         
-        .dashboard-button:hover {
+        #mem0-sidebar .dashboard-button:hover {
           background: var(--bg-button-hover);
         }
         
-        .external-link-icon {
+        #mem0-sidebar .external-link-icon {
           width: 14px;
           height: 14px;
         }
         
-        .section {
+        #mem0-sidebar .section {
           display: flex;
           flex-direction: column;
           gap: 8px;
         }
         
-        .section-header {
+        #mem0-sidebar .section-header {
           display: flex;
           justify-content: space-between;
           align-items: center;
           width: 100%;
         }
         
-        .section-title {
-          font-size: 18px;
+        #mem0-sidebar .section-title {
+          font-size: 15px;
           font-weight: 500;
           color: var(--text-white);
         }
         
-        .section-description {
+        #mem0-sidebar .section-description {
           font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
           font-style: normal;
           font-weight: 400;
-          font-size: 14px;
+          font-size: 12px;
           line-height: 140%;
           letter-spacing: -0.03em;
           color: var(--text-gray);
         }
 
-        .switch {
+        #mem0-sidebar .switch {
           position: relative;
           display: inline-block;
           width: 44px;
           height: 22px;
         }
         
-        .switch input {
+        #mem0-sidebar .switch input {
           opacity: 0;
           width: 0;
           height: 0;
         }
         
-        .slider {
+        #mem0-sidebar .slider {
           position: absolute;
           cursor: pointer;
           top: 0;
@@ -1092,37 +1143,38 @@ import { hasExtensionContext, storageSyncGet, storageSyncRemove } from './utils/
           border-radius: 34px;
         }
         
-        .slider:before {
+        #mem0-sidebar .slider:before {
           position: absolute;
           content: "";
           height: 18px;
           width: 18px;
           left: 3px;
           bottom: 2px;
-          background-color: white;
+          background-color: var(--om-action, white);
           transition: .4s;
           border-radius: 50%;
         }
         
-        input:checked + .slider {
+        #mem0-sidebar input:checked + .slider {
           background-color: var(--purple);
         }
         
-        input:focus + .slider {
+        #mem0-sidebar input:focus + .slider {
           box-shadow: 0 0 1px var(--purple);
         }
         
-        input:checked + .slider:before {
+        #mem0-sidebar input:checked + .slider:before {
+          background-color: var(--om-on-action);
           transform: translateX(20px);
         }
         
-        .memory-cards {
+        #mem0-sidebar .memory-cards {
           display: flex;
           flex-direction: column;
           gap: 12px;
         }
         
-        .memory-card {
+        #mem0-sidebar .memory-card {
           background-color: var(--bg-card);
           border-radius: 8px;
           padding: 12px;
@@ -1131,25 +1183,25 @@ import { hasExtensionContext, storageSyncGet, storageSyncRemove } from './utils/
           align-items: flex-start;
         }
         
-        .memory-content {
+        #mem0-sidebar .memory-content {
           flex: 1;
           padding-right: 8px;
         }
         
-        .memory-text {
+        #mem0-sidebar .memory-text {
           color: var(--text-gray);
-          font-size: 14px;
+          font-size: 12px;
           margin: 0 0 8px 0;
         }
         
-        .memory-categories {
+        #mem0-sidebar .memory-categories {
           display: flex;
           flex-wrap: wrap;
           gap: 4px;
           margin-top: 4px;
         }
         
-        .memory-category {
+        #mem0-sidebar .memory-category {
           background-color: var(--tag-bg);
           color: var(--text-white);
           font-size: 12px;
@@ -1157,13 +1209,13 @@ import { hasExtensionContext, storageSyncGet, storageSyncRemove } from './utils/
           border-radius: 4px;
         }
         
-        .memory-actions {
+        #mem0-sidebar .memory-actions {
           display: flex;
           gap: 4px;
           flex-shrink: 0;
         }
         
-        .memory-action-button {
+        #mem0-sidebar .memory-action-button {
           background: none;
           border: none;
           color: var(--text-gray);
@@ -1177,46 +1229,46 @@ import { hasExtensionContext, storageSyncGet, storageSyncRemove } from './utils/
           border-radius: 4px;
         }
         
-        .memory-action-button:hover {
+        #mem0-sidebar .memory-action-button:hover {
           color: var(--text-white);
           background-color: var(--bg-button);
         }
         
-        .memory-action-button.copied {
+        #mem0-sidebar .memory-action-button.copied {
           color: var(--success-color);
         }
         
-        .memory-loader {
+        #mem0-sidebar .memory-loader {
           display: flex;
           justify-content: center;
           align-items: center;
           padding: 20px 0;
         }
         
-        .no-memories, .memory-error {
+        #mem0-sidebar .no-memories, #mem0-sidebar .memory-error {
           color: var(--text-gray);
           text-align: center;
           font-style: italic;
           padding: 20px 0;
         }
         
-        .footer {
+        #mem0-sidebar .footer {
           display: flex;
           justify-content: space-between;
           align-items: center;
-          padding: 16px;
+          padding: 12px;
           border-top: 1px solid var(--border-color);
         }
         
-        .shortcut {
+        #mem0-sidebar .shortcut {
           padding: 6px 12px;
           background-color: var(--bg-card);
           color: var(--text-gray);
           border-radius: 8px;
-          font-size: 14px;
+          font-size: 12px;
         }
         
-        .logout-button {
+        #mem0-sidebar .logout-button {
           display: flex;
           flex-direction: row;
           align-items: center;
@@ -1227,14 +1279,14 @@ import { hasExtensionContext, storageSyncGet, storageSyncRemove } from './utils/
           cursor: pointer;
           transition: all 0.2s ease;
           color: var(--text-white);
-          font-size: 14px;
+          font-size: 12px;
         }
         
-        .logout-button:hover {
+        #mem0-sidebar .logout-button:hover {
           background: var(--bg-button-hover);
         }
         
-        .loader {
+        #mem0-sidebar .loader {
           border: 2px solid var(--bg-button);
           border-top: 2px solid var(--purple);
           border-radius: 50%;
@@ -1249,51 +1301,51 @@ import { hasExtensionContext, storageSyncGet, storageSyncRemove } from './utils/
           100% { transform: rotate(360deg); }
         }
         
-        .input-container {
+        #mem0-sidebar .input-container {
           width: 100%;
           padding: 0;
           box-sizing: border-box;
         }
         
-        .search-memory {
+        #mem0-sidebar .search-memory {
           width: 100%;
           box-sizing: border-box;
           margin-top: 16px;
         }
         
-        .settings-input, .settings-select {
+        #mem0-sidebar .settings-input, #mem0-sidebar .settings-select {
           width: 100%;
-          padding: 12px 16px;
+          padding: 9px 12px;
           background: var(--bg-card);
           border: 1px solid var(--border-color);
           border-radius: 8px;
           color: var(--text-white);
-          font-size: 14px;
+          font-size: 12px;
           font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
           transition: border-color 0.2s ease, background-color 0.2s ease;
           box-sizing: border-box;
         }
         
-        .settings-input:focus, .settings-select:focus {
+        #mem0-sidebar .settings-input:focus, #mem0-sidebar .settings-select:focus {
           outline: none;
           border-color: var(--purple);
           background: var(--bg-button);
         }
         
-        .settings-input::placeholder {
+        #mem0-sidebar .settings-input::placeholder {
           color: var(--text-gray);
         }
         
-        .settings-select option {
+        #mem0-sidebar .settings-select option {
           background: var(--bg-card);
           color: var(--text-white);
         }
         
-        .settings-select:hover {
+        #mem0-sidebar .settings-select:hover {
           border-color: var(--text-gray);
         }
         
-        .link-button {
+        #mem0-sidebar .link-button {
           background: none;
           border: none;
           color: var(--text-gray);
@@ -1307,19 +1359,20 @@ import { hasExtensionContext, storageSyncGet, storageSyncRemove } from './utils/
           transition: all 0.2s ease;
         }
         
-        .link-button:hover {
+        #mem0-sidebar .link-button:hover {
           color: var(--text-white);
           background: var(--bg-button);
         }
         
-        .save-button {
+        #mem0-sidebar .save-button {
+          color: var(--om-on-action) !important;
           width: 100%;
-          padding: 12px 24px;
+          padding: 9px 16px;
           background: var(--purple);
           border: none;
           border-radius: 8px;
           color: var(--text-white);
-          font-size: 14px;
+          font-size: 12px;
           font-weight: 500;
           cursor: pointer;
           transition: background-color 0.2s ease;
@@ -1330,22 +1383,22 @@ import { hasExtensionContext, storageSyncGet, storageSyncRemove } from './utils/
           font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
         }
         
-        .save-button:hover:not(:disabled) {
-          background: #6d4ed6;
+        #mem0-sidebar .save-button:hover:not(:disabled) {
+          background: var(--om-action); opacity: 0.85;
         }
         
-        .save-button:disabled {
+        #mem0-sidebar .save-button:disabled {
           background: var(--bg-button);
           cursor: not-allowed;
         }
         
-        .save-loader {
+        #mem0-sidebar .save-loader {
           display: none;
           align-items: center;
           justify-content: center;
         }
         
-        .mini-loader {
+        #mem0-sidebar .mini-loader {
           border: 2px solid var(--bg-button);
           border-top: 2px solid var(--text-white);
           border-radius: 50%;
@@ -1354,39 +1407,39 @@ import { hasExtensionContext, storageSyncGet, storageSyncRemove } from './utils/
           animation: spin 1s linear infinite;
         }
         
-        .save-message {
+        #mem0-sidebar .save-message {
           margin-top: 8px;
           padding: 8px 12px;
           border-radius: 6px;
-          font-size: 13px;
+          font-size: 12px;
           text-align: center;
         }
         
-        .save-message.success {
+        #mem0-sidebar .save-message.success {
           background: rgba(34, 197, 94, 0.1);
           color: var(--success-color);
           border: 1px solid rgba(34, 197, 94, 0.3);
         }
         
-        .save-message.error {
+        #mem0-sidebar .save-message.error {
           background: rgba(239, 68, 68, 0.1);
-          color: #f87171;
+          color: var(--om-error, #f87171);
           border: 1px solid rgba(239, 68, 68, 0.3);
         }
         
-        .threshold-value {
+        #mem0-sidebar .threshold-value {
           color: var(--purple);
           font-weight: 600;
-          font-size: 14px;
+          font-size: 12px;
         }
         
-        .slider-container {
+        #mem0-sidebar .slider-container {
           display: flex;
           flex-direction: column;
           gap: 8px;
         }
         
-        .threshold-slider {
+        #mem0-sidebar .threshold-slider {
           width: 100%;
           height: 6px;
           background: var(--bg-card);
@@ -1397,7 +1450,7 @@ import { hasExtensionContext, storageSyncGet, storageSyncRemove } from './utils/
           cursor: pointer;
         }
         
-        .threshold-slider::-webkit-slider-thumb {
+        #mem0-sidebar .threshold-slider::-webkit-slider-thumb {
           appearance: none;
           width: 20px;
           height: 20px;
@@ -1408,7 +1461,7 @@ import { hasExtensionContext, storageSyncGet, storageSyncRemove } from './utils/
           box-shadow: 0 0 0 1px var(--purple);
         }
         
-        .threshold-slider::-moz-range-thumb {
+        #mem0-sidebar .threshold-slider::-moz-range-thumb {
           width: 20px;
           height: 20px;
           border-radius: 50%;
@@ -1418,14 +1471,14 @@ import { hasExtensionContext, storageSyncGet, storageSyncRemove } from './utils/
           box-shadow: 0 0 0 1px var(--purple);
         }
         
-        .threshold-slider::-webkit-slider-track {
+        #mem0-sidebar .threshold-slider::-webkit-slider-track {
           width: 100%;
           height: 6px;
           background: var(--bg-card);
           border-radius: 3px;
         }
         
-        .threshold-slider::-moz-range-track {
+        #mem0-sidebar .threshold-slider::-moz-range-track {
           width: 100%;
           height: 6px;
           background: var(--bg-card);
@@ -1433,19 +1486,19 @@ import { hasExtensionContext, storageSyncGet, storageSyncRemove } from './utils/
           border: none;
         }
         
-        .threshold-slider:focus {
+        #mem0-sidebar .threshold-slider:focus {
           outline: none;
         }
         
-        .threshold-slider:focus::-webkit-slider-thumb {
+        #mem0-sidebar .threshold-slider:focus::-webkit-slider-thumb {
           box-shadow: 0 0 0 2px var(--purple);
         }
         
-        .threshold-slider:focus::-moz-range-thumb {
+        #mem0-sidebar .threshold-slider:focus::-moz-range-thumb {
           box-shadow: 0 0 0 2px var(--purple);
         }
         
-        .slider-labels {
+        #mem0-sidebar .slider-labels {
           display: flex;
           justify-content: space-between;
           font-size: 12px;
@@ -1453,12 +1506,12 @@ import { hasExtensionContext, storageSyncGet, storageSyncRemove } from './utils/
           margin-top: 4px;
         }
         
-        .settings-input[type="number"] {
+        #mem0-sidebar .settings-input[type="number"] {
           -moz-appearance: textfield;
         }
         
-        .settings-input[type="number"]::-webkit-outer-spin-button,
-        .settings-input[type="number"]::-webkit-inner-spin-button {
+        #mem0-sidebar .settings-input[type="number"]::-webkit-outer-spin-button,
+        #mem0-sidebar .settings-input[type="number"]::-webkit-inner-spin-button {
           -webkit-appearance: none;
           margin: 0;
         }

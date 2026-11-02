@@ -1,13 +1,15 @@
 /* eslint-disable @typescript-eslint/no-non-null-assertion */
 /* eslint-disable no-inner-declarations */
-import { MessageRole } from '../types/api';
+import { OSS_API_BASE_DEFAULT, MessageRole } from '../types/api';
 import type { ExtendedHTMLElement } from '../types/dom';
 import type { MemoryItem, MemorySearchItem, OptionalApiParams } from '../types/memory';
 import { SidebarAction } from '../types/messages';
 import { type StorageItems, StorageKey } from '../types/storage';
 import { createOrchestrator, type SearchStorage } from '../utils/background_search';
 import { OPENMEMORY_PROMPTS } from '../utils/llm_prompts';
+import { memoryFetch } from '../utils/memory_fetch';
 import { SITE_CONFIG } from '../utils/site_config';
+import { bindTheme } from '../utils/theme';
 import { sendExtensionEvent } from '../utils/util_functions';
 import { OPENMEMORY_UI, type Placement } from '../utils/util_positioning';
 
@@ -72,14 +74,13 @@ try {
         return [];
       }
 
-      const userId =
-        data[StorageKey.USER_ID_CAMEL] || data[StorageKey.USER_ID] || 'chrome-extension-user';
+      const userId = data[StorageKey.USER_ID_CAMEL] || data[StorageKey.USER_ID] || '';
       const threshold =
         data[StorageKey.SIMILARITY_THRESHOLD] !== undefined
           ? data[StorageKey.SIMILARITY_THRESHOLD]
           : 0.1;
       const topK = data[StorageKey.TOP_K] !== undefined ? data[StorageKey.TOP_K] : 10;
-      const baseUrl = data[StorageKey.API_BASE_URL] || 'https://api.mem0.ai';
+      const baseUrl = data[StorageKey.API_BASE_URL] || OSS_API_BASE_DEFAULT;
 
       const optionalParams: OptionalApiParams = {};
       if (data[StorageKey.SELECTED_ORG]) {
@@ -98,10 +99,13 @@ try {
       };
 
       const reqHeaders: Record<string, string> = { 'Content-Type': 'application/json' };
-      if (accessToken) reqHeaders['Authorization'] = `Bearer ${accessToken}`;
-      else if (apiKey) reqHeaders['X-API-Key'] = apiKey;
+      if (accessToken) {
+        reqHeaders['Authorization'] = `Bearer ${accessToken}`;
+      } else if (apiKey) {
+        reqHeaders['X-API-Key'] = apiKey;
+      }
 
-      const res = await fetch(`${baseUrl}/search`, {
+      const res = await memoryFetch(`${baseUrl}/search`, {
         method: 'POST',
         headers: reqHeaders,
         body: JSON.stringify(payload),
@@ -425,8 +429,8 @@ try {
             return;
           }
 
-          const userId = items.userId || items.user_id || 'chrome-extension-user';
-          const baseUrl = items[StorageKey.API_BASE_URL] || 'https://api.mem0.ai';
+          const userId = items.userId || items.user_id || '';
+          const baseUrl = items[StorageKey.API_BASE_URL] || OSS_API_BASE_DEFAULT;
 
           const optionalParams: OptionalApiParams = {};
           if (items.selected_org) {
@@ -437,11 +441,14 @@ try {
           }
 
           const reqHeaders: Record<string, string> = { 'Content-Type': 'application/json' };
-          if (items.access_token) reqHeaders['Authorization'] = `Bearer ${items.access_token}`;
-          else if (items.apiKey) reqHeaders['X-API-Key'] = items.apiKey;
+          if (items.access_token) {
+            reqHeaders['Authorization'] = `Bearer ${items.access_token}`;
+          } else if (items.apiKey) {
+            reqHeaders['X-API-Key'] = items.apiKey;
+          }
 
           // Send memory to mem0 API asynchronously without waiting for response
-          fetch(`${baseUrl}/memories`, {
+          memoryFetch(`${baseUrl}/memories`, {
             method: 'POST',
             headers: reqHeaders,
             body: JSON.stringify({
@@ -618,9 +625,7 @@ try {
       });
 
       const apiKey = data[StorageKey.API_KEY];
-      const userId = (data[StorageKey.USER_ID_CAMEL] ||
-        data[StorageKey.USER_ID] ||
-        'chrome-extension-user') as string;
+      const userId = (data[StorageKey.USER_ID_CAMEL] || data[StorageKey.USER_ID] || '') as string;
       const accessToken = data[StorageKey.ACCESS_TOKEN];
 
       const optionalParams: OptionalApiParams = {};
@@ -631,7 +636,7 @@ try {
       if (data[StorageKey.SELECTED_PROJECT]) {
         optionalParams.project_id = data[StorageKey.SELECTED_PROJECT];
       }
-      const baseUrl = data[StorageKey.API_BASE_URL] || 'https://api.mem0.ai';
+      const baseUrl = data[StorageKey.API_BASE_URL] || OSS_API_BASE_DEFAULT;
 
       if (!apiKey && !accessToken) {
         isProcessingMem0 = false;
@@ -643,13 +648,16 @@ try {
       const messages = [{ role: MessageRole.User, content: message }];
 
       const reqHeaders: Record<string, string> = { 'Content-Type': 'application/json' };
-      if (accessToken) reqHeaders['Authorization'] = `Bearer ${accessToken}`;
-      else if (apiKey) reqHeaders['X-API-Key'] = apiKey;
+      if (accessToken) {
+        reqHeaders['Authorization'] = `Bearer ${accessToken}`;
+      } else if (apiKey) {
+        reqHeaders['X-API-Key'] = apiKey;
+      }
 
       // Use orchestrator immediate run
       replitSearch.runImmediate(message);
       // Proceed with adding memory asynchronously without awaiting
-      fetch(`${baseUrl}/memories`, {
+      memoryFetch(`${baseUrl}/memories`, {
         method: 'POST',
         headers: reqHeaders,
         body: JSON.stringify({
@@ -719,9 +727,9 @@ try {
               let style = document.createElement('style');
               style.textContent = `
                 :host { position: relative; }
-                .mem0-btn { all: initial; cursor: pointer; display:inline-flex; align-items:center; justify-content:center; width:40px; height:40px; border-radius:50%; box-shadow: 0 6px 16px rgba(0,0,0,0.3); background:#1C1C1E; }
+                .mem0-btn { all: initial; cursor: pointer; display:inline-flex; align-items:center; justify-content:center; width:40px; height:40px; border-radius:50%; box-shadow: 0 6px 16px rgba(0,0,0,0.3); background:var(--om-bg, #1C1C1E); }
                 .mem0-btn img { width:20px; height:20px; border-radius:50%; }
-                .dot { position:absolute; top:-2px; right:-2px; width:8px; height:8px; background:#80DDA2; border-radius:50%; border:2px solid #1C1C1E; display:none; }
+                .dot { position:absolute; top:-2px; right:-2px; width:8px; height:8px; background:#80DDA2; border-radius:50%; border:2px solid var(--om-bg, #1C1C1E); display:none; }
                 :host([data-has-text="1"]) .dot { display:block; }
               `;
               let btn = document.createElement('button');
@@ -769,9 +777,9 @@ try {
             let style = document.createElement('style');
             style.textContent = `
               :host { position: relative; }
-              .mem0-btn { all: initial; cursor: pointer; display:inline-flex; align-items:center; justify-content:center; width:40px; height:40px; border-radius:50%; box-shadow: 0 6px 16px rgba(0,0,0,0.3); background:#1C1C1E; }
+              .mem0-btn { all: initial; cursor: pointer; display:inline-flex; align-items:center; justify-content:center; width:40px; height:40px; border-radius:50%; box-shadow: 0 6px 16px rgba(0,0,0,0.3); background:var(--om-bg, #1C1C1E); }
               .mem0-btn img { width:20px; height:20px; border-radius:50%; }
-              .dot { position:absolute; top:-2px; right:-2px; width:8px; height:8px; background:#80DDA2; border-radius:50%; border:2px solid #1C1C1E; display:none; }
+              .dot { position:absolute; top:-2px; right:-2px; width:8px; height:8px; background:#80DDA2; border-radius:50%; border:2px solid var(--om-bg, #1C1C1E); display:none; }
               :host([data-has-text="1"]) .dot { display:block; }
             `;
             let btn = document.createElement('button');
@@ -824,9 +832,9 @@ try {
                 let style = document.createElement('style');
                 style.textContent = `
                   :host { position: relative; }
-                  .mem0-btn { all: initial; cursor: pointer; display:inline-flex; align-items:center; justify-content:center; width:40px; height:40px; border-radius:50%; box-shadow: 0 6px 16px rgba(0,0,0,0.3); background:#1C1C1E; }
+                  .mem0-btn { all: initial; cursor: pointer; display:inline-flex; align-items:center; justify-content:center; width:40px; height:40px; border-radius:50%; box-shadow: 0 6px 16px rgba(0,0,0,0.3); background:var(--om-bg, #1C1C1E); }
                   .mem0-btn img { width:20px; height:20px; border-radius:50%; }
-                  .dot { position:absolute; top:-2px; right:-2px; width:8px; height:8px; background:#80DDA2; border-radius:50%; border:2px solid #1C1C1E; display:none; }
+                  .dot { position:absolute; top:-2px; right:-2px; width:8px; height:8px; background:#80DDA2; border-radius:50%; border:2px solid var(--om-bg, #1C1C1E); display:none; }
                   :host([data-has-text="1"]) .dot { display:block; }
                 `;
                 let btn = document.createElement('button');
@@ -993,7 +1001,7 @@ try {
     transform: translateX(-50%);
     background-color: #2d2e30;
     border: 1px solid #5f6368;
-    color: white;
+    color: var(--om-text, white);
     padding: 8px 12px;
     border-radius: 6px;
     font-size: 12px;
@@ -1043,6 +1051,7 @@ try {
 
     // Create popup container
     const popupOverlay = document.createElement('div');
+    bindTheme(popupOverlay);
     popupOverlay.id = 'mem0-login-popup';
     popupOverlay.style.cssText = `
     position: fixed;
@@ -1063,7 +1072,7 @@ try {
     border-radius: 12px;
     width: 320px;
     padding: 24px;
-    color: white;
+    color: var(--om-text, white);
     box-shadow: 0 4px 20px rgba(0, 0, 0, 0.5);
     font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
   `;
@@ -1077,7 +1086,7 @@ try {
     background: none;
     border: none;
     color: #9aa0a6;
-    font-size: 16px;
+    font-size: 14px;
     cursor: pointer;
   `;
     closeButton.innerHTML = '&times;';
@@ -1098,7 +1107,7 @@ try {
     heading.textContent = 'Sign in to OpenMemory';
     heading.style.cssText = `
     margin: 0;
-    font-size: 18px;
+    font-size: 16px;
     font-weight: 600;
   `;
 
@@ -1110,7 +1119,7 @@ try {
     message.style.cssText = `
     margin-bottom: 24px;
     color: #e8eaed;
-    font-size: 14px;
+    font-size: 12px;
     line-height: 1.5;
     text-align: center;
   `;
@@ -1124,10 +1133,10 @@ try {
     width: 100%;
     padding: 10px;
     background-color: #1a73e8;
-    color: white;
+    color: var(--om-text, white);
     border: none;
     border-radius: 8px;
-    font-size: 14px;
+    font-size: 12px;
     font-weight: 600;
     cursor: pointer;
     transition: background-color 0.2s;
@@ -1258,6 +1267,7 @@ try {
 
     // Create modal overlay
     const modalOverlay = document.createElement('div');
+    bindTheme(modalOverlay);
     modalOverlay.style.cssText = `
     position: fixed;
     top: 0;
@@ -1290,7 +1300,7 @@ try {
     height: ${modalHeight}px;
     display: flex;
     flex-direction: column;
-    color: white;
+    color: var(--om-text, white);
     box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
     position: absolute;
     top: ${topPosition}px;
@@ -1360,7 +1370,7 @@ try {
     modalHeader.style.cssText = `
     display: flex;
     align-items: center;
-    padding: 10px 16px;
+    padding: 8px 12px;
     justify-content: space-between;
     background-color: #35373a;
     flex-shrink: 0;
@@ -1396,9 +1406,9 @@ try {
     const title = document.createElement('div');
     title.textContent = 'OpenMemory';
     title.style.cssText = `
-    font-size: 16px;
+    font-size: 14px;
     font-weight: 600;
-    color: white;
+    color: var(--om-text, white);
     margin-left: 8px;
   `;
 
@@ -1425,7 +1435,7 @@ try {
     cursor: pointer;
     font-size: 12px;
     font-weight: 600;
-    color: white;
+    color: var(--om-text, white);
     transition: background-color 0.2s;
   `;
     addToPromptBtn.textContent = 'Add to Prompt';
@@ -1459,7 +1469,7 @@ try {
     opacity: 0.6;
     transition: opacity 0.2s;
   `;
-    settingsBtn.innerHTML = `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#FFFFFF" xmlns="http://www.w3.org/2000/svg">
+    settingsBtn.innerHTML = `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--om-text, #FFFFFF)" xmlns="http://www.w3.org/2000/svg">
     <path d="M12 15a3 3 0 100-6 3 3 0 000 6z" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
     <path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-2 2 2 2 0 01-2-2v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83 0 2 2 0 010-2.83l.06-.06a1.65 1.65 0 00.33-1.82 1.65 1.65 0 00-1.51-1H3a2 2 0 01-2-2 2 2 0 012-2h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 010-2.83 2 2 0 012.83 0l.06.06a1.65 1.65 0 001.82.33H9a1.65 1.65 0 001-1.51V3a2 2 0 012-2 2 2 0 012 2v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 0 2 2 0 010 2.83l-.06.06a1.65 1.65 0 00-.33 1.82V9a1.65 1.65 0 001.51 1H21a2 2 0 012 2 2 2 0 01-2 2h-.09a1.65 1.65 0 00-1.51 1z" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
   </svg>`;
@@ -1489,7 +1499,7 @@ try {
     contentSection.style.cssText = `
     display: flex;
     flex-direction: column;
-    padding: 0 16px;
+    padding: 0 12px;
     gap: 12px;
     overflow: hidden;
     flex: 1;
@@ -1499,9 +1509,9 @@ try {
     // Create memories counter
     const memoriesCounter = document.createElement('div');
     memoriesCounter.style.cssText = `
-    font-size: 16px;
+    font-size: 14px;
     font-weight: 600;
-    color: #FFFFFF;
+    color: var(--om-text, #FFFFFF);
     margin-top: 16px;
     flex-shrink: 0;
   `;
@@ -1655,7 +1665,7 @@ try {
       emptyText.textContent = 'No relevant memories found';
       emptyText.style.cssText = `
       color: #9aa0a6;
-      font-size: 14px;
+      font-size: 12px;
       font-weight: 500;
     `;
 
@@ -1798,7 +1808,7 @@ try {
 
         const memoryText = document.createElement('div');
         memoryText.style.cssText = `
-        font-size: 14px;
+        font-size: 12px;
         line-height: 1.5;
         color: #e8eaed;
         flex-grow: 1;

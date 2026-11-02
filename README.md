@@ -1,72 +1,78 @@
-# OpenMemory Chrome extension (self-hosted fork)
+# OpenMemory Self-hosted Extension
 
-Active fork of the archived [mem0ai/mem0-chrome-extension](https://github.com/mem0ai/mem0-chrome-extension). Built for **local Mem0 OSS** (no Mem0 cloud sign-in): API on your machine, your API key, your `user_id`.
+Chrome / Edge extension for AI chat memories using your own Mem0 server. Based on [TheSethRose/mem0-chrome-extension](https://github.com/TheSethRose/mem0-chrome-extension), originally [mem0ai/mem0-chrome-extension](https://github.com/mem0ai/mem0-chrome-extension). Original MIT license and attribution are retained.
 
-Maintained by [TheSethRose](https://github.com/TheSethRose) for use with a self-hosted stack (e.g. Hermes + mem0 on `127.0.0.1`).
+## Install
 
-## What changed vs upstream
+Extract the extension ZIP. Open `chrome://extensions` or `edge://extensions`, enable Developer mode, choose **Load unpacked**, and select the directory containing `manifest.json`.
 
-- **Local-first auth** — `X-API-Key` (`m0sk_…`) and server URL in the popup; Google / MemAI cloud login removed for OSS.
-- **Defaults** — `http://127.0.0.1:8888`, user id `seth` (override in popup / sidebar settings).
-- **Popup** — verifies the key against your API before saving; connected view with shortcuts to ChatGPT, dashboard, sidebar.
-- **Sidebar** — lists memories from OSS (`top_k`), system fonts (ChatGPT CSP-safe), clearer errors on 401.
-- **Setup docs** — see [SETH-OSS-SETUP.md](./SETH-OSS-SETUP.md) and [scripts/setup-mac.sh](./scripts/setup-mac.sh).
+Build from source with Node.js 22+ and pnpm:
 
-Upstream is archived; this repo is the place for OSS-focused fixes.
-
-## Prerequisites
-
-- [Node.js](https://nodejs.org/) (LTS)
-- Running **Mem0 OSS** API (default `http://127.0.0.1:8888`) and dashboard (`http://127.0.0.1:3000`)
-- An API key from your mem0 dashboard or `scripts/ensure-oss-key.sh`
-
-## Install (unpacked)
-
-```bash
-git clone https://github.com/TheSethRose/mem0-chrome-extension.git
-cd mem0-chrome-extension
-npm install
-npm run build
+```sh
+pnpm install --frozen-lockfile
+pnpm run type-check
+pnpm run build
 ```
 
-Chrome → `chrome://extensions` → **Developer mode** → **Load unpacked** → select the **`dist/`** folder.
+Load `dist/`. After updating, reload the extension and refresh chat tabs. Version **1.3.18** is one patch above the fork base (1.3.17).
 
-## Configure
+## First-time setup
 
-1. Click the extension icon.
-2. **Server URL:** `http://127.0.0.1:8888`
-3. **API key:** your `m0sk_…` key (must show **Saved and verified.**)
-4. On ChatGPT / Claude / etc., open the sidebar (**Ctrl+M** / **⌃+M**) to browse memories.
+Open the extension popup and fill all three fields:
 
-Align **user id** with your agent (e.g. `seth` for Hermes) so ChatGPT and your main assistant share the same memory namespace.
+| Field | Initial value | Meaning |
+| --- | --- | --- |
+| Server URL | `http://127.0.0.1:8888` | API address, including any reverse-proxy prefix such as `/backend`. |
+| User ID | Empty | Your memory namespace; match other clients to share memories. |
+| API key | Empty | Key issued by your self-hosted server. |
 
-## Supported sites
+Choose **Save**. The extension verifies the connection using the selected user ID before enabling memory access. Blank fields are rejected; incomplete setup cannot read or write memories. Existing installations without the new setup flag also need to save setup once. No personal user ID, private port, or API key is bundled.
 
-ChatGPT, Claude, Perplexity, Gemini, Grok, DeepSeek, Replit, and others (see `manifest.json` content scripts).
+Port 8888 is the host port in the [official Mem0 Docker Compose configuration](https://github.com/mem0ai/mem0/blob/main/server/docker-compose.yaml). Other deployment ports can be entered manually. The extension expects the self-hosted `/memories` and `/search` endpoints, not the cloud `/v1/` API.
 
-## Development
+If the server returns HTML rather than JSON, check that Server URL points to the API rather than the dashboard. URLs are not silently rewritten to a deployment-specific path.
 
-```bash
-npm run build    # production bundle → dist/
-npm run dev      # if configured in package.json
+## Use
+
+- **Retrieve:** On DeepSeek, the memory chip icon sits immediately left of the attachment icon. Find relevant memories and choose **Add to Prompt** to insert them into the composer.
+- **Save a DeepSeek answer:** Click **OpenMemory** immediately after the answer's Share action. Only the answer body is saved; search summaries and citation markers are excluded. The answer is stored verbatim (`infer: false`, assistant role), rather than inferred as personal facts. The button shows progress, success, or retry. Repeated clicks on an unchanged saved answer are disabled for that rendered row.
+- **Save selected text:** Select text, right-click, then choose **Save to OpenMemory**. The server can extract memories using its normal inference behavior.
+- **Browse / configure:** Choose **Open memory sidebar** in the popup on a webpage. Browser-internal pages cannot host the sidebar.
+- **Appearance:** Sun selects white daytime mode; moon selects dark nighttime mode. Popup, sidebar, and memory dialogs share the saved choice, with compact typography and spacing.
+
+Adapters for ChatGPT, Claude, Gemini, Grok, Perplexity, and Replit are retained. Some also save prompts when sending messages. Website changes can affect those automatic hooks; explicit save actions are easier to verify. The DeepSeek Share fallback recognizes the current SVG icon when accessible labels are absent, and may need updating if the site changes it.
+
+## Data and permissions
+
+Connection settings and theme use extension sync storage; browser profile sync can synchronize them. Memory requests go to the configured server. Content-script requests are relayed through the background worker, restricted to that server's memory-list, memory-create, and search endpoints. Cross-origin redirects are rejected. Upstream analytics calls are disabled.
+
+Broad website access supports the cross-site sidebar, context menu, and configurable API host. Search/address tracking is opt-in. Do not commit credentials, private snapshots, or browser profiles.
+
+## Tests
+
+Build first. Browser tests use Playwright and isolated temporary profiles. Install Playwright separately or set `PLAYWRIGHT_PATH` to an existing installation. Set `BROWSER_PATH` to Chrome/Edge; the default is the standard Windows Edge location.
+
+```sh
+node scripts/test-setup-save.cjs
+node scripts/test-theme.cjs
+node scripts/test-sidebar-button.cjs
+node scripts/test-deepseek-style.cjs
 ```
 
-Do not commit `.local-api-key` (gitignored). Use `scripts/ensure-oss-key.sh` locally to refresh a dev key.
+These tests use synthetic pages and a local mock API. Optional saved-page geometry test (requires the adjacent saved CSS folder; blocks remote resources and does not upload conversations):
 
-## Troubleshooting
+```sh
+node scripts/test-deepseek-snapshot.cjs /path/to/saved-deepseek.html
+```
 
-| Symptom | Fix |
-|--------|-----|
-| Sidebar **0 memories** / **401 Invalid API key** | Re-save key in popup; confirm `curl` with same key works against `:8888/memories?user_id=seth` |
-| **CORS** errors from chat sites | Mem0 server needs `CORS_ALLOW_ALL=true` for local dev (see SETH-OSS-SETUP.md) |
-| Console **storage not allowed** | Often harmless iframe noise; reload extension after updates |
+Optional real-server integration test uses `MEM0_TEST_URL` and `MEM0_TEST_KEY` environment variables:
 
-Full OSS stack notes: [SETH-OSS-SETUP.md](./SETH-OSS-SETUP.md).
+```sh
+node scripts/test-local.cjs
+```
+
+It creates a temporary test user and memories, then attempts to delete those memories during cleanup. It requires working creation, search, extraction, and deletion endpoints. Test scripts contain no credentials.
 
 ## License
 
-MIT — same as upstream mem0-chrome-extension.
-
-## Credits
-
-Original extension and Mem0 by [mem0ai](https://github.com/mem0ai). This fork keeps the MIT license and targets self-hosted deployments.
+[MIT](LICENSE). Independent self-hosted fork; not an official Mem0 browser release.

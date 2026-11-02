@@ -1,11 +1,13 @@
 /* eslint-disable @typescript-eslint/no-non-null-assertion */
-import { MessageRole } from '../types/api';
+import { OSS_API_BASE_DEFAULT, MessageRole } from '../types/api';
 import type { MemoryItem, MemorySearchItem, OptionalApiParams } from '../types/memory';
 import { SidebarAction } from '../types/messages';
 import { type StorageItems, StorageKey } from '../types/storage';
 import { createOrchestrator, type SearchStorage } from '../utils/background_search';
 import { OPENMEMORY_PROMPTS } from '../utils/llm_prompts';
+import { memoryFetch } from '../utils/memory_fetch';
 import { SITE_CONFIG } from '../utils/site_config';
+import { bindTheme } from '../utils/theme';
 import { sendExtensionEvent } from '../utils/util_functions';
 import { OPENMEMORY_UI, type Placement } from '../utils/util_positioning';
 
@@ -54,14 +56,13 @@ const grokSearch = createOrchestrator({
       return [];
     }
 
-    const userId =
-      data[StorageKey.USER_ID_CAMEL] || data[StorageKey.USER_ID] || 'chrome-extension-user';
+    const userId = data[StorageKey.USER_ID_CAMEL] || data[StorageKey.USER_ID] || '';
     const threshold =
       data[StorageKey.SIMILARITY_THRESHOLD] !== undefined
         ? data[StorageKey.SIMILARITY_THRESHOLD]
         : 0.1;
     const topK = data[StorageKey.TOP_K] !== undefined ? data[StorageKey.TOP_K] : 10;
-    const baseUrl = data[StorageKey.API_BASE_URL] || 'https://api.mem0.ai';
+    const baseUrl = data[StorageKey.API_BASE_URL] || OSS_API_BASE_DEFAULT;
 
     const optionalParams: OptionalApiParams = {};
     if (data[StorageKey.SELECTED_ORG]) {
@@ -90,10 +91,13 @@ const grokSearch = createOrchestrator({
     };
 
     const reqHeaders: Record<string, string> = { 'Content-Type': 'application/json' };
-    if (accessToken) reqHeaders['Authorization'] = `Bearer ${accessToken}`;
-    else if (apiKey) reqHeaders['X-API-Key'] = apiKey;
+    if (accessToken) {
+      reqHeaders['Authorization'] = `Bearer ${accessToken}`;
+    } else if (apiKey) {
+      reqHeaders['X-API-Key'] = apiKey;
+    }
 
-    const res = await fetch(`${baseUrl}/search`, {
+    const res = await memoryFetch(`${baseUrl}/search`, {
       method: 'POST',
       headers: reqHeaders,
       body: JSON.stringify(payload),
@@ -243,7 +247,7 @@ function setInputValue(inputElement: HTMLTextAreaElement | null, value: string):
 //           ? `Bearer ${items.access_token}`
 //           : `Token ${items.apiKey}`;
 
-//         const userId = items.userId || items.user_id || 'chrome-extension-user';
+//         const userId = items.userId || items.user_id || '';
 
 //         const optionalParams: OptionalApiParams = {};
 //         if (items.selected_org) {
@@ -272,7 +276,7 @@ function setInputValue(inputElement: HTMLTextAreaElement | null, value: string):
 //           ...optionalParams,
 //         };
 
-//         fetch('https://api.mem0.ai/v1/memories/', {
+//         memoryFetch('https://api.mem0.ai/v1/memories/', {
 //           method: 'POST',
 //           headers: {
 //             'Content-Type': 'application/json',
@@ -350,7 +354,7 @@ function initializeMem0Integration(): void {
           :host { position: relative; }
           .mem0-btn { all: initial; cursor: pointer; display:inline-flex; align-items:center; justify-content:center; width:32px; height:32px; border-radius:50%; }
           .mem0-btn img { width:18px; height:18px; border-radius:50%; }
-          .dot { position:absolute; top:-2px; right:-2px; width:8px; height:8px; background:#80DDA2; border-radius:50%; border:2px solid #1C1C1E; display:none; }
+          .dot { position:absolute; top:-2px; right:-2px; width:8px; height:8px; background:#80DDA2; border-radius:50%; border:2px solid var(--om-bg, #1C1C1E); display:none; }
           :host([data-has-text="1"]) .dot { display:block; }
         `;
         let btn = document.createElement('button');
@@ -435,7 +439,7 @@ function initializeMem0Integration(): void {
           :host { position: relative; }
           .mem0-btn { all: initial; cursor: pointer; display:inline-flex; align-items:center; justify-content:center; width:32px; height:32px; border-radius:50%; }
           .mem0-btn img { width:18px; height:18px; border-radius:50%; }
-          .dot { position:absolute; top:-2px; right:-2px; width:8px; height:8px; background:#80DDA2; border-radius:50%; border:2px solid #1C1C1E; display:none; }
+          .dot { position:absolute; top:-2px; right:-2px; width:8px; height:8px; background:#80DDA2; border-radius:50%; border:2px solid var(--om-bg, #1C1C1E); display:none; }
           :host([data-has-text="1"]) .dot { display:block; }
         `;
         let btn = document.createElement('button');
@@ -600,7 +604,7 @@ function initializeMem0Integration(): void {
 //       height: 8px;
 //       background-color:rgb(128, 221, 162);
 //       border-radius: 50%;
-//       border: 1px solid #1C1C1E;
+//       border: 1px solid var(--om-bg, #1C1C1E);
 //       display: none;
 //       z-index: 1001;
 //       pointer-events: none;
@@ -639,9 +643,9 @@ function initializeMem0Integration(): void {
 //       bottom: 48px;
 //       left: 50%;
 //       transform: translateX(-50%);
-//       background-color: #1C1C1E;
-//       border: 1px solid #27272A;
-//       color: white;
+//       background-color: var(--om-bg, #1C1C1E);
+//       border: 1px solid var(--om-card, #27272A);
+//       color: var(--om-text, white);
 //       padding: 8px 12px;
 //       border-radius: 6px;
 //       font-size: 12px;
@@ -662,9 +666,9 @@ function initializeMem0Integration(): void {
 //       transform: translateX(-50%) rotate(45deg);
 //       width: 10px;
 //       height: 10px;
-//       background-color: #1C1C1E;
-//       border-right: 1px solid #27272A;
-//       border-bottom: 1px solid #27272A;
+//       background-color: var(--om-bg, #1C1C1E);
+//       border-right: 1px solid var(--om-card, #27272A);
+//       border-bottom: 1px solid var(--om-card, #27272A);
 //     `;
 //     popover.appendChild(arrow);
 
@@ -824,6 +828,7 @@ function createMemoryModal(memoryItems: MemoryItem[], isLoading: boolean = false
 
   // Create modal overlay
   const modalOverlay = document.createElement('div');
+  bindTheme(modalOverlay);
   modalOverlay.style.cssText = `
     position: fixed;
     top: 0;
@@ -874,7 +879,7 @@ function createMemoryModal(memoryItems: MemoryItem[], isLoading: boolean = false
             :host { position: relative; }
             .mem0-btn { all: initial; cursor: pointer; display:inline-flex; align-items:center; justify-content:center; width:32px; height:32px; border-radius:50%; }
             .mem0-btn img { width:18px; height:18px; border-radius:50%; }
-            .dot { position:absolute; top:-2px; right:-2px; width:8px; height:8px; background:#80DDA2; border-radius:50%; border:2px solid #1C1C1E; display:none; }
+            .dot { position:absolute; top:-2px; right:-2px; width:8px; height:8px; background:#80DDA2; border-radius:50%; border:2px solid var(--om-bg, #1C1C1E); display:none; }
             :host([data-has-text="1"]) .dot { display:block; }
           `;
         let btn = document.createElement('button');
@@ -913,7 +918,7 @@ function createMemoryModal(memoryItems: MemoryItem[], isLoading: boolean = false
           :host { position: relative; }
           .mem0-btn { all: initial; cursor: pointer; display:inline-flex; align-items:center; justify-content:center; width:32px; height:32px; border-radius:50%; }
           .mem0-btn img { width:18px; height:18px; border-radius:50%; }
-          .dot { position:absolute; top:-2px; right:-2px; width:8px; height:8px; background:#80DDA2; border-radius:50%; border:2px solid #1C1C1E; display:none; }
+          .dot { position:absolute; top:-2px; right:-2px; width:8px; height:8px; background:#80DDA2; border-radius:50%; border:2px solid var(--om-bg, #1C1C1E); display:none; }
           :host([data-has-text="1"]) .dot { display:block; }
         `;
         let btn = document.createElement('button');
@@ -937,19 +942,19 @@ function createMemoryModal(memoryItems: MemoryItem[], isLoading: boolean = false
   // Create modal container with positioning
   const modalContainer = document.createElement('div');
   modalContainer.style.cssText = `
-    background-color: #1C1C1E;
+    background-color: var(--om-bg, #1C1C1E);
     border-radius: 12px;
     width: ${modalWidth}px;
     height: ${modalHeight}px;
     display: flex;
     flex-direction: column;
-    color: white;
+    color: var(--om-text, white);
     box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
     position: absolute;
     top: ${topPosition}px;
     left: ${leftPosition}px;
     pointer-events: auto;
-    border: 1px solid #27272A;
+    border: 1px solid var(--om-card, #27272A);
     font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
     overflow: hidden;
   `;
@@ -1010,9 +1015,9 @@ function createMemoryModal(memoryItems: MemoryItem[], isLoading: boolean = false
   modalHeader.style.cssText = `
     display: flex;
     align-items: center;
-    padding: 10px 16px;
+    padding: 8px 12px;
     justify-content: space-between;
-    background-color: #232325;
+    background-color: var(--om-card, #232325);
     flex-shrink: 0;
     cursor: move;
     user-select: none;
@@ -1039,9 +1044,9 @@ function createMemoryModal(memoryItems: MemoryItem[], isLoading: boolean = false
   const title = document.createElement('div');
   title.textContent = 'OpenMemory';
   title.style.cssText = `
-    font-size: 16px;
+    font-size: 14px;
     font-weight: 600;
-    color: white;
+    color: var(--om-text, white);
     margin-left: 8px;
   `;
 
@@ -1062,13 +1067,13 @@ function createMemoryModal(memoryItems: MemoryItem[], isLoading: boolean = false
     align-items: center;
     padding: 5px 16px;
     gap: 8px;
-    background-color: white;
+    background-color: var(--om-action, white);
     border: none;
     border-radius: 8px;
     cursor: pointer;
     font-size: 12px;
     font-weight: 600;
-    color: black;
+    color: var(--om-on-action, black);
   `;
   addToPromptBtn.textContent = 'Add to Prompt';
 
@@ -1090,7 +1095,7 @@ function createMemoryModal(memoryItems: MemoryItem[], isLoading: boolean = false
     opacity: 0.6;
     transition: opacity 0.2s;
   `;
-  settingsBtn.innerHTML = `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#FFFFFF" xmlns="http://www.w3.org/2000/svg">
+  settingsBtn.innerHTML = `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--om-text, #FFFFFF)" xmlns="http://www.w3.org/2000/svg">
     <path d="M12 15a3 3 0 100-6 3 3 0 000 6z" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
     <path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-2 2 2 2 0 01-2-2v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83 0 2 2 0 010-2.83l.06-.06a1.65 1.65 0 00.33-1.82 1.65 1.65 0 00-1.51-1H3a2 2 0 01-2-2 2 2 0 012-2h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 010-2.83 2 2 0 012.83 0l.06.06a1.65 1.65 0 001.82.33H9a1.65 1.65 0 001-1.51V3a2 2 0 012-2 2 2 0 012 2v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 0 2 2 0 010 2.83l-.06.06a1.65 1.65 0 00-.33 1.82V9a1.65 1.65 0 001.51 1H21a2 2 0 012 2 2 2 0 01-2 2h-.09a1.65 1.65 0 00-1.51 1z" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
   </svg>`;
@@ -1123,7 +1128,7 @@ function createMemoryModal(memoryItems: MemoryItem[], isLoading: boolean = false
   contentSection.style.cssText = `
     display: flex;
     flex-direction: column;
-    padding: 0 16px;
+    padding: 0 12px;
     gap: 12px;
     overflow: hidden;
     flex: 1;
@@ -1133,9 +1138,9 @@ function createMemoryModal(memoryItems: MemoryItem[], isLoading: boolean = false
   // Create memories counter
   const memoriesCounter = document.createElement('div');
   memoriesCounter.style.cssText = `
-    font-size: 16px;
+    font-size: 14px;
     font-weight: 600;
-    color: #FFFFFF;
+    color: var(--om-text, #FFFFFF);
     margin-top: 16px;
     flex-shrink: 0;
   `;
@@ -1181,7 +1186,7 @@ function createMemoryModal(memoryItems: MemoryItem[], isLoading: boolean = false
         align-items: flex-start;
         justify-content: space-between;
         padding: 12px;
-        background-color: #27272A;
+        background-color: var(--om-card, #27272A);
         border-radius: 8px;
         height: 72px;
         flex-shrink: 0;
@@ -1190,7 +1195,7 @@ function createMemoryModal(memoryItems: MemoryItem[], isLoading: boolean = false
 
       const skeletonText = document.createElement('div');
       skeletonText.style.cssText = `
-        background-color: #383838;
+        background-color: var(--om-button, #383838);
         border-radius: 4px;
         height: 14px;
         width: 85%;
@@ -1199,7 +1204,7 @@ function createMemoryModal(memoryItems: MemoryItem[], isLoading: boolean = false
 
       const skeletonText2 = document.createElement('div');
       skeletonText2.style.cssText = `
-        background-color: #383838;
+        background-color: var(--om-button, #383838);
         border-radius: 4px;
         height: 14px;
         width: 65%;
@@ -1217,7 +1222,7 @@ function createMemoryModal(memoryItems: MemoryItem[], isLoading: boolean = false
         width: 20px;
         height: 20px;
         border-radius: 50%;
-        background-color: #383838;
+        background-color: var(--om-button, #383838);
       `;
 
       const skeletonButton2 = document.createElement('div');
@@ -1225,7 +1230,7 @@ function createMemoryModal(memoryItems: MemoryItem[], isLoading: boolean = false
         width: 20px;
         height: 20px;
         border-radius: 50%;
-        background-color: #383838;
+        background-color: var(--om-button, #383838);
       `;
 
       skeletonActions.appendChild(skeletonButton1);
@@ -1310,7 +1315,7 @@ function createMemoryModal(memoryItems: MemoryItem[], isLoading: boolean = false
         align-items: flex-start;
         justify-content: space-between;
         padding: 12px; 
-        background-color: #27272A;
+        background-color: var(--om-card, #27272A);
         border-radius: 8px;
         cursor: pointer;
         transition: all 0.2s ease;
@@ -1322,9 +1327,9 @@ function createMemoryModal(memoryItems: MemoryItem[], isLoading: boolean = false
 
       const memoryText = document.createElement('div');
       memoryText.style.cssText = `
-        font-size: 14px;
+        font-size: 12px;
         line-height: 1.5;
-        color: #D4D4D8;
+        color: var(--om-text, #D4D4D8);
         flex-grow: 1;
         display: -webkit-box;
         -webkit-line-clamp: 2;
@@ -1349,8 +1354,8 @@ function createMemoryModal(memoryItems: MemoryItem[], isLoading: boolean = false
         border: none;
         cursor: pointer;
         padding: 4px;
-        background:rgb(66, 66, 69);
-        color:rgb(199, 199, 201);
+        background:var(--om-button, rgb(66, 66, 69));
+        color:var(--om-muted, rgb(199, 199, 201));
         border-radius: 100%;
         transition: all 0.2s ease;
       `;
@@ -1393,7 +1398,7 @@ function createMemoryModal(memoryItems: MemoryItem[], isLoading: boolean = false
         border: none;
         cursor: pointer;
         padding: 4px;
-        color: #A1A1AA;
+        color: var(--om-muted, #A1A1AA);
       `;
       menuButton.innerHTML = `<svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor" xmlns="http://www.w3.org/2000/svg">
         <circle cx="12" cy="12" r="2"/>
@@ -1410,8 +1415,8 @@ function createMemoryModal(memoryItems: MemoryItem[], isLoading: boolean = false
         display: none;
         align-items: center;
         gap: 6px;
-        background:rgb(66, 66, 69);
-        color:rgb(199, 199, 201);
+        background:var(--om-button, rgb(66, 66, 69));
+        color:var(--om-muted, rgb(199, 199, 201));
         border-radius: 8px;
         padding: 2px 4px;
         border: none;
@@ -1451,7 +1456,7 @@ function createMemoryModal(memoryItems: MemoryItem[], isLoading: boolean = false
         contentWrapper.style.scrollbarWidth = 'none';
         contentWrapper.style.msOverflowStyle = 'none';
         contentWrapper.style.cssText += '::-webkit-scrollbar { display: none; }';
-        memoryContainer.style.backgroundColor = '#1C1C1E';
+        memoryContainer.style.backgroundColor = 'var(--om-bg, #1C1C1E)';
         memoryContainer.style.maxHeight = '300px'; // Allow expansion but within container
         memoryContainer.style.overflow = 'hidden';
         removeButton.style.display = 'flex';
@@ -1467,7 +1472,7 @@ function createMemoryModal(memoryItems: MemoryItem[], isLoading: boolean = false
         memoryText.style.webkitLineClamp = '2';
         memoryText.style.height = '42px';
         contentWrapper.style.overflowY = 'visible';
-        memoryContainer.style.backgroundColor = '#27272A';
+        memoryContainer.style.backgroundColor = 'var(--om-card, #27272A)';
         memoryContainer.style.maxHeight = '72px';
         memoryContainer.style.overflow = 'hidden';
         removeButton.style.display = 'none';
@@ -1514,10 +1519,14 @@ function createMemoryModal(memoryItems: MemoryItem[], isLoading: boolean = false
 
       // Add hover effect
       memoryContainer.addEventListener('mouseenter', () => {
-        memoryContainer.style.backgroundColor = isExpanded ? '#18181B' : '#323232';
+        memoryContainer.style.backgroundColor = isExpanded
+          ? 'var(--om-bg, #18181B)'
+          : 'var(--om-hover, #323232)';
       });
       memoryContainer.addEventListener('mouseleave', () => {
-        memoryContainer.style.backgroundColor = isExpanded ? '#1C1C1E' : '#27272A';
+        memoryContainer.style.backgroundColor = isExpanded
+          ? 'var(--om-bg, #1C1C1E)'
+          : 'var(--om-card, #27272A)';
       });
     }
 
@@ -1550,7 +1559,7 @@ function createMemoryModal(memoryItems: MemoryItem[], isLoading: boolean = false
     `;
 
     const emptyIcon = document.createElement('div');
-    emptyIcon.innerHTML = `<svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="#71717A" xmlns="http://www.w3.org/2000/svg">
+    emptyIcon.innerHTML = `<svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="var(--om-muted, #71717A)" xmlns="http://www.w3.org/2000/svg">
       <path d="M9 3H5a2 2 0 00-2 2v4m6-6h10a2 2 0 012 2v10a2 2 0 01-2 2h-4M3 21h4a2 2 0 002-2v-4m-6 6V9m18 12a9 9 0 11-18 0 9 9 0 0118 0z" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
     </svg>`;
     emptyIcon.style.marginBottom = '16px';
@@ -1558,8 +1567,8 @@ function createMemoryModal(memoryItems: MemoryItem[], isLoading: boolean = false
     const emptyText = document.createElement('div');
     emptyText.textContent = 'No relevant memories found';
     emptyText.style.cssText = `
-      color: #71717A;
-      font-size: 14px;
+      color: var(--om-muted, #71717A);
+      font-size: 12px;
       font-weight: 500;
     `;
 
@@ -1586,10 +1595,10 @@ function createMemoryModal(memoryItems: MemoryItem[], isLoading: boolean = false
   // Navigation buttons
   const prevButton = document.createElement('button');
   prevButton.innerHTML = `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-    <path d="M15 19l-7-7 7-7" stroke="#A1A1AA" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+    <path d="M15 19l-7-7 7-7" stroke="var(--om-muted, #A1A1AA)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
   </svg>`;
   prevButton.style.cssText = `
-    background: #27272A;
+    background: var(--om-card, #27272A);
     border: none;
     border-radius: 50%;
     width: 32px;
@@ -1603,7 +1612,7 @@ function createMemoryModal(memoryItems: MemoryItem[], isLoading: boolean = false
 
   const nextButton = document.createElement('button');
   nextButton.innerHTML = `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-    <path d="M9 5l7 7-7 7" stroke="#A1A1AA" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+    <path d="M9 5l7 7-7 7" stroke="var(--om-muted, #A1A1AA)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
   </svg>`;
   nextButton.style.cssText = prevButton.style.cssText;
 
@@ -1626,12 +1635,12 @@ function createMemoryModal(memoryItems: MemoryItem[], isLoading: boolean = false
   [prevButton, nextButton].forEach(button => {
     button.addEventListener('mouseenter', () => {
       if (!button.disabled) {
-        button.style.backgroundColor = '#323232';
+        button.style.backgroundColor = 'var(--om-hover, #323232)';
       }
     });
     button.addEventListener('mouseleave', () => {
       if (!button.disabled) {
-        button.style.backgroundColor = '#27272A';
+        button.style.backgroundColor = 'var(--om-card, #27272A)';
       }
     });
   });
@@ -1871,9 +1880,7 @@ async function handleMem0Modal() {
     });
 
     const apiKey = data[StorageKey.API_KEY];
-    const userId = (data[StorageKey.USER_ID_CAMEL] ||
-      data[StorageKey.USER_ID] ||
-      'chrome-extension-user') as string;
+    const userId = (data[StorageKey.USER_ID_CAMEL] || data[StorageKey.USER_ID] || '') as string;
     const accessToken = data[StorageKey.ACCESS_TOKEN];
     if (!apiKey && !accessToken) {
       isProcessingMem0 = false;
@@ -1891,11 +1898,14 @@ async function handleMem0Modal() {
     if (data[StorageKey.SELECTED_PROJECT]) {
       optionalParams.project_id = data[StorageKey.SELECTED_PROJECT];
     }
-    const baseUrl = data[StorageKey.API_BASE_URL] || 'https://api.mem0.ai';
+    const baseUrl = data[StorageKey.API_BASE_URL] || OSS_API_BASE_DEFAULT;
 
     const reqHeaders: Record<string, string> = { 'Content-Type': 'application/json' };
-    if (accessToken) reqHeaders['Authorization'] = `Bearer ${accessToken}`;
-    else if (apiKey) reqHeaders['X-API-Key'] = apiKey;
+    if (accessToken) {
+      reqHeaders['Authorization'] = `Bearer ${accessToken}`;
+    } else if (apiKey) {
+      reqHeaders['X-API-Key'] = apiKey;
+    }
 
     try {
       const textarea = getTextarea();
@@ -1906,7 +1916,7 @@ async function handleMem0Modal() {
     }
 
     // Proceed with adding memory asynchronously without awaiting
-    fetch(`${baseUrl}/memories`, {
+    memoryFetch(`${baseUrl}/memories`, {
       method: 'POST',
       headers: reqHeaders,
       body: JSON.stringify({
@@ -1946,9 +1956,9 @@ function showButtonPopup(button: HTMLElement, message: string): void {
     top: -40px;
     left: 50%;
     transform: translateX(-50%);
-    background-color: #1C1C1E;
-    border: 1px solid #27272A;
-    color: white;
+    background-color: var(--om-bg, #1C1C1E);
+    border: 1px solid var(--om-card, #27272A);
+    color: var(--om-text, white);
     padding: 8px 12px;
     border-radius: 6px;
     font-size: 12px;
@@ -1968,9 +1978,9 @@ function showButtonPopup(button: HTMLElement, message: string): void {
     transform: translateX(-50%) rotate(45deg);
     width: 10px;
     height: 10px;
-    background-color: #1C1C1E;
-    border-right: 1px solid #27272A;
-    border-bottom: 1px solid #27272A;
+    background-color: var(--om-bg, #1C1C1E);
+    border-right: 1px solid var(--om-card, #27272A);
+    border-bottom: 1px solid var(--om-card, #27272A);
   `;
 
   popup.appendChild(arrow);
@@ -1997,6 +2007,7 @@ function showLoginPopup(): void {
 
   // Create popup container
   const popupOverlay = document.createElement('div');
+  bindTheme(popupOverlay);
   popupOverlay.id = 'mem0-login-popup';
   popupOverlay.style.cssText = `
     position: fixed;
@@ -2013,11 +2024,11 @@ function showLoginPopup(): void {
 
   const popupContainer = document.createElement('div');
   popupContainer.style.cssText = `
-    background-color: #1C1C1E;
+    background-color: var(--om-bg, #1C1C1E);
     border-radius: 12px;
     width: 320px;
     padding: 24px;
-    color: white;
+    color: var(--om-text, white);
     box-shadow: 0 4px 20px rgba(0, 0, 0, 0.5);
     font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
   `;
@@ -2030,8 +2041,8 @@ function showLoginPopup(): void {
     right: 16px;
     background: none;
     border: none;
-    color: #A1A1AA;
-    font-size: 16px;
+    color: var(--om-muted, #A1A1AA);
+    font-size: 14px;
     cursor: pointer;
   `;
   closeButton.innerHTML = '&times;';
@@ -2070,7 +2081,7 @@ function showLoginPopup(): void {
   heading.textContent = 'Sign in to OpenMemory';
   heading.style.cssText = `
     margin: 0;
-    font-size: 18px;
+    font-size: 16px;
     font-weight: 600;
   `;
 
@@ -2081,8 +2092,8 @@ function showLoginPopup(): void {
   message.textContent = 'Please sign in to access your memories and enhance your conversations!';
   message.style.cssText = `
     margin-bottom: 24px;
-    color: #D4D4D8;
-    font-size: 14px;
+    color: var(--om-text, #D4D4D8);
+    font-size: 12px;
     line-height: 1.5;
     text-align: center;
   `;
@@ -2095,11 +2106,11 @@ function showLoginPopup(): void {
     justify-content: center;
     width: 100%;
     padding: 10px;
-    background-color: white;
-    color: black;
+    background-color: var(--om-action, white);
+    color: var(--om-on-action, black);
     border: none;
     border-radius: 8px;
-    font-size: 14px;
+    font-size: 12px;
     font-weight: 600;
     cursor: pointer;
     transition: background-color 0.2s;
@@ -2113,11 +2124,11 @@ function showLoginPopup(): void {
   signInButton.appendChild(signInText);
 
   signInButton.addEventListener('mouseenter', () => {
-    signInButton.style.backgroundColor = '#f5f5f5';
+    signInButton.style.backgroundColor = 'var(--om-action, #f5f5f5)';
   });
 
   signInButton.addEventListener('mouseleave', () => {
-    signInButton.style.backgroundColor = 'white';
+    signInButton.style.backgroundColor = 'var(--om-action, white)';
   });
 
   // Open sign-in page when clicked

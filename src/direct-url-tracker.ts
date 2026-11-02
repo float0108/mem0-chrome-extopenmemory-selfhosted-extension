@@ -1,15 +1,21 @@
-import { type ApiMemoryRequest, DEFAULT_USER_ID, MessageRole } from './types/api';
+import {
+  OSS_API_BASE_DEFAULT,
+  type ApiMemoryRequest,
+  DEFAULT_USER_ID,
+  MessageRole,
+} from './types/api';
 import type { OnCommittedDetails } from './types/browser';
 import { Category, Provider } from './types/providers';
 import type { Settings } from './types/settings';
 import { StorageKey } from './types/storage';
+import { CONFIGURATION_KEYS, isConfigured } from './utils/configuration';
 import { buildAuthHeaders } from './utils/util_functions';
 
 function getSettings(): Promise<Settings> {
   return new Promise(resolve => {
     chrome.storage.sync.get(
       [
-        StorageKey.API_KEY,
+        ...CONFIGURATION_KEYS,
         StorageKey.ACCESS_TOKEN,
         StorageKey.USER_ID,
         StorageKey.SELECTED_ORG,
@@ -19,14 +25,14 @@ function getSettings(): Promise<Settings> {
       ],
       d => {
         resolve({
-          hasCreds: Boolean(d[StorageKey.API_KEY] || d[StorageKey.ACCESS_TOKEN]),
+          hasCreds: isConfigured(d),
           apiKey: d[StorageKey.API_KEY],
           accessToken: d[StorageKey.ACCESS_TOKEN],
           userId: d[StorageKey.USER_ID] || DEFAULT_USER_ID,
           orgId: d[StorageKey.SELECTED_ORG],
           projectId: d[StorageKey.SELECTED_PROJECT],
           memoryEnabled: d[StorageKey.MEMORY_ENABLED] !== false,
-          baseUrl: d[StorageKey.API_BASE_URL] || 'https://api.mem0.ai',
+          baseUrl: d[StorageKey.API_BASE_URL] || OSS_API_BASE_DEFAULT,
         });
       }
     );
