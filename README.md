@@ -35,7 +35,7 @@ If the server returns HTML rather than JSON, check that Server URL points to the
 ## Use
 
 - **Retrieve:** On DeepSeek, the memory chip icon sits immediately left of the attachment icon. Find relevant memories and choose **Add to Prompt** to insert them into the composer.
-- **Save a DeepSeek answer:** Click **OpenMemory** immediately after the answer's Share action. Only the answer body is saved; search summaries and citation markers are excluded. The answer is stored verbatim (`infer: false`, assistant role), rather than inferred as personal facts. The button shows progress, success, or retry. Repeated clicks on an unchanged saved answer are disabled for that rendered row.
+- **Save a DeepSeek answer:** Click the **memory chip icon** immediately after the answer's Share action. Only the answer body is saved; search summaries and citation markers are excluded. The answer is stored verbatim (`infer: false`, assistant role), rather than inferred as personal facts. The icon changes to a spinner, checkmark, or retry symbol; hover for details. Repeated clicks on an unchanged saved answer are disabled for that rendered row.
 - **Save selected text:** Select text, right-click, then choose **Save to OpenMemory**. The server can extract memories using its normal inference behavior.
 - **Browse / configure:** Choose **Open memory sidebar** in the popup on a webpage. Browser-internal pages cannot host the sidebar.
 - **Appearance:** Sun selects white daytime mode; moon selects dark nighttime mode. Popup, sidebar, and memory dialogs share the saved choice, with compact typography and spacing.

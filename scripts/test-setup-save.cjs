@@ -47,7 +47,8 @@ const server = http.createServer(async (req, res) => {
     assert.equal(await page.locator('.openmemory-save-answer').count(), 2);
     assert.ok(await page.locator('#one .share').evaluate(e => e.nextElementSibling.classList.contains('openmemory-save-answer')));
     const first = page.locator('#one .openmemory-save-answer button');
-    await first.click(); await first.getByText('已保存', { exact: true }).waitFor();
+    assert.equal(await first.textContent(), '');
+    await first.click(); await first.and(page.locator('[data-save-state="saved"]')).waitFor();
     const writes = () => requests.filter(r => r.method === 'POST');
     assert.equal(writes().length, 1); assert.equal(writes()[0].url, '/api/memories');
     const payload = writes()[0].body;
@@ -58,15 +59,15 @@ const server = http.createServer(async (req, res) => {
     await first.evaluate(e => e.click()); assert.equal(writes().length, 1);
     failNext = true;
     const second = page.locator('#two .openmemory-save-answer button');
-    await second.click(); await second.getByText('保存失败 · 重试', { exact: true }).waitFor();
-    await second.click(); await second.getByText('已保存', { exact: true }).waitFor();
+    await second.click(); await second.and(page.locator('[data-save-state="error"]')).waitFor();
+    await second.click(); await second.and(page.locator('[data-save-state="saved"]')).waitFor();
     assert.equal(writes().length, 3);
     await page.locator('#one .actions').evaluate(e => e.replaceWith(e.cloneNode(true)));
     await page.waitForFunction(() => document.querySelector('#one .openmemory-save-answer')?.shadowRoot?.querySelector('button'));
     assert.equal(await page.locator('.openmemory-save-answer').count(), 2);
     await page.locator('#one .ds-assistant-message-main-content').evaluate(e => e.innerHTML = '<p>Regenerated answer.</p>');
     await page.waitForFunction(() => !document.querySelector('#one .openmemory-save-answer').shadowRoot.querySelector('button').disabled);
-    await first.click(); await first.getByText('已保存', { exact: true }).waitFor();
+    await first.click(); await first.and(page.locator('[data-save-state="saved"]')).waitFor();
     assert.equal(writes().at(-1).body.messages[0].content, 'Regenerated answer.');
     await page.locator('#two .actions').screenshot({ path: path.resolve(__dirname, '../theme-answer-save-light.png') });
     await page.evaluate(() => { document.body.style.background = '#18181b'; document.body.style.color = '#b7b7bd'; });

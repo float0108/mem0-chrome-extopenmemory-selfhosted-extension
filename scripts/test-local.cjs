@@ -95,7 +95,7 @@ async function main() {
   await context.route('https://chat.deepseek.com/**', route => route.fulfill({ contentType: 'text/html', body: '<html><body><article><div class="ds-message"><div class="ds-assistant-message-main-content"><p>Isolated answer-save test: Aurora 742 is a fictional observatory.</p></div></div><div><button aria-label="Share">Share</button></div></article><textarea></textarea></body></html>' }));
   const deepseek = await context.newPage(); await deepseek.goto('https://chat.deepseek.com/');
   await deepseek.locator('.openmemory-save-answer button').click();
-  await deepseek.locator('.openmemory-save-answer').getByText('已保存', { exact: true }).waitFor({ timeout: 60000 });
+  await deepseek.locator('.openmemory-save-answer button[data-save-state="saved"]').waitFor({ timeout: 60000 });
   const savedAnswers = await direct('/memories?user_id=' + user);
   const savedRows = savedAnswers.results || savedAnswers;
   for (const row of savedRows) ids.add(row.id);
